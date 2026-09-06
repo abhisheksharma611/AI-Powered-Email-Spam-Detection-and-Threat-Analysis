@@ -1,0 +1,588 @@
+{% extends "base.html" %}
+
+{% block title %}{{ email.subject }} - SpamProtection{% endblock %}
+
+{% block content %}
+<div class="container mt-0" style="background-color: #ffffff; color: #111827;">
+    <!-- Back Button -->
+    <div class="row mb-3 mt-3">
+        <div class="col-12">
+            <button onclick="goBackToResults()" class="btn btn-outline-primary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Results
+            </button>
+        </div>
+    </div>
+
+    <!-- Email Header Card - Creative Design -->
+    <div class="card mb-4 border-0 shadow-sm" style="border-radius: 16px; overflow: hidden;">
+        <div class="card-header text-white" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border: none; padding: 20px 24px;">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 class="mb-0 fw-bold">
+                    <i class="fas fa-envelope-open-text me-2"></i> Email Details
+                </h4>
+                {% if analysis %}
+                {% set category_colors = {
+                    'legitimate': 'success',
+                    'promotion': 'warning',
+                    'phishing': 'phishing',
+                    'malware': 'purple',
+                    'newsletter': 'newsletter',
+                    'spam': 'danger'
+                } %}
+                {% set risk_colors = {
+                    'High': 'danger',
+                    'Medium': 'warning',
+                    'Low': 'success'
+                } %}
+                <div>
+                    <span class="badge bg-{{ category_colors.get(analysis.category, 'secondary') }} me-1" style="font-size: 0.85rem; padding: 6px 12px;">
+                        {% if analysis.category == 'legitimate' %}
+                            <i class="fas fa-check-circle me-1"></i>
+                        {% elif analysis.category == 'promotion' %}
+                            <i class="fas fa-bullhorn me-1"></i>
+                        {% elif analysis.category == 'phishing' %}
+                            <i class="fas fa-skull-crossbones me-1"></i>
+                        {% elif analysis.category == 'malware' %}
+                            <i class="fas fa-virus me-1"></i>
+                        {% elif analysis.category == 'newsletter' %}
+                            <i class="fas fa-newspaper me-1"></i>
+                        {% elif analysis.category == 'spam' %}
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                        {% endif %}
+                        {{ 'Not Spam' if analysis.category == 'legitimate' else (analysis.category|title if analysis.category else 'Unknown') }}
+                    </span>
+                    <span class="badge bg-{{ risk_colors.get(analysis.risk_level, 'secondary') }}" style="font-size: 0.85rem; padding: 6px 12px;">
+                        Risk: {{ analysis.risk_level }}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card-body p-4" style="background-color: #ffffff;">
+            <!-- Subject -->
+            <div class="mb-4">
+                <h6 class="text-muted mb-2 fw-bold"><i class="fas fa-file-lines me-1"></i> Subject</h6>
+                <div class="fw-bold text-dark" style="font-size: 1.25rem; line-height: 1.4;">{{ email.subject }}</div>
+            </div>
+            
+            <hr style="border-color: #e5e7eb;">
+            
+            <!-- Email Meta Information -->
+            <div class="row" style="font-size: 1.05rem;">
+                <div class="col-md-6 mb-3">
+                    <h6 class="text-muted mb-2 fw-bold"><i class="fas fa-user me-1"></i> From</h6>
+                    <div class="fw-semibold text-dark">
+                        {{ email.sender_display }}
+                        <br>
+                        <small class="text-active"><{{ email.sender }}></small>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <h6 class="text-muted mb-2 fw-bold"><i class="fas fa-calendar-alt me-1"></i> Date</h6>
+                    <span class="fw-semibold text-dark utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</span>
+                </div>
+            </div>
+            
+            {% if email.to %}
+            <div class="row" style="font-size: 1.05rem;">
+                <div class="col-12 mb-3">
+                    <h6 class="text-muted mb-2 fw-bold"><i class="fas fa-at me-1"></i> To</h6>
+                    <span class="fw-semibold text-dark">{{ email.to }}</span>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if email.cc %}
+            <div class="row" style="font-size: 1.05rem;">
+                <div class="col-12 mb-3">
+                    <h6 class="text-muted mb-2 fw-bold"><i class="fas fa-cc me-1"></i> CC</h6>
+                    <span class="fw-semibold text-dark">{{ email.cc }}</span>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Analysis Results Card - EXACTLY Matches Results Page Modal -->
+    {% if analysis %}
+    {% set risk_score = analysis.risk_score|default(0) %}
+    {% set urgency_level = analysis.urgency_level|default('Low') %}
+    {% set category = analysis.category|default('unknown') %}
+    {% set confidence = analysis.confidence|default(0)|round(0)|int %}
+    
+    <div class="card mb-4 border-0 shadow-sm" style="border-radius: 16px; overflow: hidden;">
+        <div class="card-header text-white" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border: none; padding: 20px 24px;">
+            <h5 class="mb-0 fw-bold"><i class="fas fa-shield-virus me-2"></i> Security Analysis</h5>
+        </div>
+        <div class="card-body p-4" style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);">
+            <div class="row g-3">
+                <!-- Category Card -->
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100" id="categoryCard" style="border-radius: 12px;">
+                        <div class="card-body text-center p-3">
+                            <div class="mb-2">
+                                <i class="fas fa-tag fa-2x" id="categoryIcon"></i>
+                            </div>
+                            <small class="d-block fw-bold" style="color: #374151;">Category</small>
+                            <span class="fw-bold fs-4" id="modalCategory">
+                                {{ 'Not Spam' if category == 'legitimate' else category|title }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Risk Score Card -->
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100" id="riskScoreCard" style="border-radius: 12px;">
+                        <div class="card-body text-center p-3">
+                            <div class="mb-2">
+                                <i class="fas fa-exclamation-triangle fa-2x" id="riskScoreIcon"></i>
+                            </div>
+                            <small class="d-block fw-bold" style="color: #374151;">Risk Score</small>
+                            <span class="fw-bold fs-4" id="modalRiskScore">{{ risk_score }}</span>
+                            <div class="progress mt-2" style="height: 6px; border-radius: 3px;">
+                                <div class="progress-bar" id="riskScoreBar" role="progressbar" style="width: {{ risk_score }}%; border-radius: 3px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Urgency Card -->
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100" id="urgencyCard" style="border-radius: 12px;">
+                        <div class="card-body text-center p-3">
+                            <div class="mb-2">
+                                <i class="fas fa-bolt fa-2x" id="urgencyIcon"></i>
+                            </div>
+                            <small class="d-block fw-bold" style="color: #374151;">Urgency</small>
+                            <span class="fw-bold fs-4" id="modalUrgency">{{ urgency_level }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Confidence Card -->
+                <div class="col-md-3">
+                    <div class="card border-0 shadow-sm h-100" id="confidenceCard" style="border-radius: 12px;">
+                        <div class="card-body text-center p-3">
+                            <div class="mb-2">
+                                <i class="fas fa-chart-line fa-2x" id="confidenceIcon"></i>
+                            </div>
+                            <small class="d-block fw-bold" style="color: #374151;">Confidence</small>
+                            <span class="fw-bold fs-4" id="modalConfidence">{{ confidence }}%</span>
+                            <div class="progress mt-2" style="height: 6px; border-radius: 3px;">
+                                <div class="progress-bar" id="confidenceBar" role="progressbar" style="width: {{ confidence }}%; border-radius: 3px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            {% if analysis.explanation_summary %}
+            <div class="mt-3" id="modalExplanationRow">
+                <div class="alert alert-info mb-0 py-2 px-3 border-0" style="border-radius: 10px; background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);">
+                    <span class="badge me-1" style="font-size: 13px; vertical-align: middle; background-color: #2563EB; color: #fff;">AI</span> <span id="modalExplanation" style="font-size: 14px; color: #1e293b; font-weight: 500; line-height: 1.5;">{{ analysis.explanation_summary }}</span>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Email Body Card -->
+    <div class="card border-0 shadow-sm" style="border-radius: 16px; overflow: hidden;">
+        <div class="card-header" style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border: none; padding: 20px 24px;">
+            <h5 class="mb-0 fw-bold text-dark"><i class="fas fa-file-alt me-2"></i> Email Content</h5>
+        </div>
+        <div class="card-body p-0" style="background-color: #ffffff;">
+            {% if email.body_type == 'html' and email.body_html %}
+            <!-- HTML Email Body - sanitized server-side with bleach -->
+            <div class="email-body-content">{{ email.body_html | safe }}</div>
+            {% elif email.body_text %}
+            <!-- Plain Text Email Body -->
+            <div class="email-body-text p-4">
+                <pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; color: #222; font-size: 13px; line-height: 1.4;">{{ email.body_text }}</pre>
+            </div>
+            {% else %}
+            <!-- No Content Available -->
+            <div class="text-center py-5">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No content available</h5>
+                <p class="text-muted">This email has no displayable content.</p>
+                {% if email.snippet %}
+                <div class="mt-3">
+                    <h6 class="text-dark">Preview Snippet:</h6>
+                    <p class="text-secondary">{{ email.snippet }}</p>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+/* Purple badge for malware */
+.bg-purple {
+    background-color: #6f42c1 !important;
+}
+
+/* Text purple */
+.text-purple {
+    color: #6f42c1 !important;
+}
+
+/* CRITICAL: Hide navbar and black bars when opened in new tab */
+body {
+    background-color: #ffffff !important;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+
+.navbar {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    left: -9999px !important;
+}
+
+/* Hide any black bars or navigation elements */
+.navbar-dark,
+.navbar-light,
+.navbar-expand-lg,
+.navbar-expand-md,
+.navbar-expand-sm,
+.navbar-expand {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+}
+
+/* Hide desktop user menu */
+.desktop-user-menu {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* Hide footer */
+footer {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+/* Hide flash messages */
+.container.mt-3 {
+    display: none !important;
+}
+
+/* Ensure main content has white background */
+main {
+    background-color: #ffffff !important;
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+
+/* Email body content - Gmail-style direct DOM injection, responsive */
+.email-body-content {
+    padding: 12px;
+    color: #222;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+.email-body-content img {
+    max-width: 100% !important;
+    height: auto !important;
+}
+.email-body-content table {
+    max-width: 100% !important;
+}
+.email-body-content a {
+    word-break: break-all !important;
+}
+.email-body-content * {
+    max-width: 100% !important;
+}
+
+/* Plain text email styling */
+.email-body-text {
+    background-color: #ffffff;
+}
+
+.email-body-text pre {
+    background-color: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* Card hover effect */
+.card {
+    transition: box-shadow 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .display-6 {
+        font-size: 1.5rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    /* Email Details Card - Compact on mobile */
+    .card-header {
+        padding: 12px 16px !important;
+    }
+    
+    .card-header h4 {
+        font-size: 1rem !important;
+    }
+    
+    .card-body h6 {
+        font-size: 0.75rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .card-body h4 {
+        font-size: 0.95rem !important;
+    }
+    
+    .card-body p {
+        font-size: 0.85rem !important;
+    }
+    
+    /* Security Analysis Cards - Compact on mobile */
+    .row.g-3 > div {
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
+    
+    .row.g-3 .card {
+        border-radius: 8px !important;
+    }
+    
+    .row.g-3 .card-body {
+        padding: 8px 6px !important;
+    }
+    
+    .row.g-3 .fa-2x {
+        font-size: 1.25rem !important;
+    }
+    
+    .row.g-3 small.fw-bold {
+        font-size: 0.6rem !important;
+    }
+    
+    .row.g-3 .fs-4 {
+        font-size: 0.9rem !important;
+    }
+    
+    .row.g-3 .progress {
+        height: 4px !important;
+    }
+    
+}
+</style>
+
+<script>
+// Go back to results - close tab and focus on opener
+function goBackToResults() {
+    // If opened via window.open (has opener), focus on opener and close
+    if (window.opener && !window.opener.closed) {
+        try {
+            // Focus on the original results page tab
+            window.opener.focus();
+            // Close the current email tab
+            window.close();
+        } catch (e) {
+            // If can't close (browser restriction), redirect to results
+            window.location.href = '{{ url_for("results_page") }}';
+        }
+    } else {
+        // Fallback: redirect to results page
+        window.location.href = '{{ url_for("results_page") }}';
+    }
+}
+
+// Hide navbar + apply dynamic colors on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if opened via window.open (has opener)
+    if (window.opener) {
+        // AGGRESSIVELY hide ALL navbar elements
+        const navbar = document.querySelector('.navbar');
+        if (navbar) {
+            navbar.style.setProperty('display', 'none', 'important');
+            navbar.style.setProperty('visibility', 'hidden', 'important');
+            navbar.style.setProperty('height', '0', 'important');
+            navbar.style.setProperty('overflow', 'hidden', 'important');
+            navbar.style.setProperty('position', 'absolute', 'important');
+            navbar.style.setProperty('left', '-9999px', 'important');
+        }
+        // Also hide the desktop user menu (positioned absolutely)
+        const desktopUserMenu = document.querySelector('.desktop-user-menu');
+        if (desktopUserMenu) {
+            desktopUserMenu.style.setProperty('display', 'none', 'important');
+            desktopUserMenu.style.setProperty('visibility', 'hidden', 'important');
+        }
+        // Also hide any footer if present
+        const footer = document.querySelector('footer');
+        if (footer) {
+            footer.style.setProperty('display', 'none', 'important');
+            footer.style.setProperty('visibility', 'hidden', 'important');
+        }
+        // Adjust body padding to remove navbar space
+        document.body.style.setProperty('padding-top', '0', 'important');
+        document.body.style.setProperty('margin-top', '0', 'important');
+        // Also remove any margin-top from main content
+        const main = document.querySelector('main');
+        if (main) {
+            main.style.setProperty('margin-top', '0', 'important');
+            main.style.setProperty('padding-top', '0', 'important');
+        }
+        // Hide flash messages container if present
+        const flashContainer = document.querySelector('.container.mt-3');
+        if (flashContainer) {
+            flashContainer.style.setProperty('display', 'none', 'important');
+        }
+        // Ensure the back button is properly styled and visible
+        const backButton = document.querySelector('button[onclick="goBackToResults()"]');
+        if (backButton) {
+            backButton.style.setProperty('display', 'inline-block', 'important');
+            backButton.style.setProperty('visibility', 'visible', 'important');
+            backButton.style.setProperty('opacity', '1', 'important');
+        }
+    }
+    
+    // Apply dynamic colors to security analysis cards (matching modal exactly)
+    // Risk Score Card
+    const riskScoreCard = document.getElementById('riskScoreCard');
+    const riskScoreIcon = document.getElementById('riskScoreIcon');
+    const riskScoreBar = document.getElementById('riskScoreBar');
+    const riskScoreEl = document.getElementById('modalRiskScore');
+    
+    if (riskScoreEl) {
+        const riskScore = parseInt(riskScoreEl.textContent) || 0;
+        riskScoreBar.style.width = riskScore + '%';
+        
+        if (riskScore >= 61) {
+            riskScoreCard.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+            riskScoreIcon.className = 'fas fa-exclamation-triangle fa-2x text-danger';
+            riskScoreBar.className = 'progress-bar bg-danger';
+            riskScoreEl.className = 'fw-bold fs-4 text-danger';
+        } else if (riskScore >= 41) {
+            riskScoreCard.style.background = 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+            riskScoreIcon.className = 'fas fa-exclamation-triangle fa-2x text-warning';
+            riskScoreBar.className = 'progress-bar bg-warning';
+            riskScoreEl.className = 'fw-bold fs-4 text-warning';
+        } else {
+            riskScoreCard.style.background = 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)';
+            riskScoreIcon.className = 'fas fa-check-circle fa-2x text-success';
+            riskScoreBar.className = 'progress-bar bg-success';
+            riskScoreEl.className = 'fw-bold fs-4 text-success';
+        }
+    }
+    
+    // Confidence Card
+    const confidenceCard = document.getElementById('confidenceCard');
+    const confidenceIcon = document.getElementById('confidenceIcon');
+    const confidenceBar = document.getElementById('confidenceBar');
+    const confidenceEl = document.getElementById('modalConfidence');
+    
+    if (confidenceEl) {
+        const confidence = parseInt(confidenceEl.textContent) || 0;
+        confidenceBar.style.width = confidence + '%';
+        
+        if (confidence >= 80) {
+            confidenceCard.style.background = 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)';
+            confidenceIcon.className = 'fas fa-chart-line fa-2x text-success';
+            confidenceBar.className = 'progress-bar bg-success';
+            confidenceEl.className = 'fw-bold fs-4 text-success';
+        } else if (confidence >= 50) {
+            confidenceCard.style.background = 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+            confidenceIcon.className = 'fas fa-chart-line fa-2x text-warning';
+            confidenceBar.className = 'progress-bar bg-warning';
+            confidenceEl.className = 'fw-bold fs-4 text-warning';
+        } else {
+            confidenceCard.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+            confidenceIcon.className = 'fas fa-chart-line fa-2x text-danger';
+            confidenceBar.className = 'progress-bar bg-danger';
+            confidenceEl.className = 'fw-bold fs-4 text-danger';
+        }
+    }
+    
+    // Urgency Card
+    const urgencyCard = document.getElementById('urgencyCard');
+    const urgencyIcon = document.getElementById('urgencyIcon');
+    const urgencySpan = document.getElementById('modalUrgency');
+    
+    if (urgencySpan) {
+        const urgencyText = urgencySpan.textContent.trim();
+        if (urgencyText.includes('High')) {
+            urgencyCard.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+            urgencyIcon.className = 'fas fa-fire fa-2x text-danger';
+            urgencySpan.className = 'fw-bold fs-4 text-danger';
+        } else if (urgencyText.includes('Medium')) {
+            urgencyCard.style.background = 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+            urgencyIcon.className = 'fas fa-bolt fa-2x text-warning';
+            urgencySpan.className = 'fw-bold fs-4 text-warning';
+        } else {
+            urgencyCard.style.background = 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)';
+            urgencyIcon.className = 'fas fa-envelope fa-2x text-success';
+            urgencySpan.className = 'fw-bold fs-4 text-success';
+        }
+    }
+    
+    // Category Card
+    const categoryCard = document.getElementById('categoryCard');
+    const categoryIcon = document.getElementById('categoryIcon');
+    const categorySpan = document.getElementById('modalCategory');
+    
+    if (categorySpan) {
+        const categoryText = categorySpan.textContent.trim().toLowerCase();
+        const categoryInfo = {
+            'not spam': { icon: 'check-circle', bg: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)' },
+            'spam': { icon: 'exclamation-triangle', bg: 'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)' },
+            'promotion': { icon: 'bullhorn', bg: 'linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)' },
+            'legitimate': { icon: 'check-circle', bg: 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)' },
+            'newsletter': { icon: 'newspaper', bg: 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)' },
+            'malware': { icon: 'virus', bg: 'linear-gradient(135deg, #ede9fe 0%, #c4b5fd 100%)' },
+            'phishing': { icon: 'skull-crossbones', bg: 'linear-gradient(135deg, #ffe0e0 0%, #ffb3b3 100%)' }
+        };
+        let info = null;
+        for (const [key, val] of Object.entries(categoryInfo)) {
+            if (categoryText.includes(key)) { info = val; break; }
+        }
+        if (info) {
+            const categoryName = Object.keys(categoryInfo).find(k => categoryText.includes(k)) || '';
+            const colorKey = categoryName === 'not spam' ? 'legitimate' : categoryName;
+            categoryCard.style.background = info.bg;
+            categoryIcon.className = 'fas fa-' + info.icon + ' fa-2x';
+            categoryIcon.style.color = `var(--color-${colorKey})`;
+            categorySpan.className = 'fw-bold fs-4';
+            categorySpan.style.color = `var(--color-${colorKey})`;
+        } else {
+            categoryCard.style.background = 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)';
+            categoryIcon.className = 'fas fa-tag fa-2x';
+            categoryIcon.style.color = 'var(--color-newsletter)';
+            categorySpan.className = 'fw-bold fs-4';
+            categorySpan.style.color = 'var(--color-newsletter)';
+        }
+        if (categoryText === 'not spam') {
+            categorySpan.textContent = 'Not Spam';
+        } else {
+            categorySpan.textContent = categoryText.charAt(0).toUpperCase() + categoryText.slice(1);
+        }
+    }
+    
+});
+</script>
+{% endblock %}

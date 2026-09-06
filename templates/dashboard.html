@@ -1,0 +1,1353 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - SpamProtection{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- User Welcome Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="welcome-card card bg-gradient-primary text-white">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h2 class="h3 mb-2">
+                                <span class="greeting-emoji">{{ greeting_emoji }}</span>
+                                {{ greeting }}, {{ user.name }}!
+                            </h2>
+                            <p class="mb-1 opacity-75">
+                                Your email security dashboard is ready. Analyze your inbox for threats and stay protected with AI-powered multi-category detection.
+                            </p>
+                             <small class="opacity-100">
+                                 <i class="fas fa-clock me-1"></i>
+                                 {{ current_time }} • {{ current_date }}
+                             </small>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <img src="{{ user.picture or url_for('static', filename='img/logo.png') }}" referrerpolicy="no-referrer" onerror="this.src='{{ url_for('static', filename='img/logo.png') }}'" 
+                                 alt="Profile" class="rounded-circle" width="80" height="80">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3">
+                <i class="fas fa-bolt"></i> Quick Actions
+            </h4>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="action-card card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="action-icon bg-primary text-white rounded-circle me-3">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <div>
+                            <h5 class="mb-1">Analyze Inbox</h5>
+                            <small class="text-active">Scan 50 recent emails for threats</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="analyzeEmailsBtn" onclick="startAsyncAnalysis()">
+                        <span class="btn-content">
+                            <i class="fas fa-play"></i> Start Analysis
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6 mb-3">
+            <div class="action-card card h-100 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="action-icon bg-success text-white rounded-circle me-3">
+                            <i class="fas fa-file-alt"></i>
+                        </div>
+                        <div>
+                            <h5 class="mb-1">Test Custom Text</h5>
+                            <small class="text-active">Check any text for spam indicators</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#textAnalysisModal">
+                        <i class="fas fa-keyboard"></i> Test Text
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Protection Features with Distinct Colors -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3">
+                <i class="fas fa-shield-alt"></i> AI Protection Categories
+            </h4>
+        </div>
+        
+        <div class="col-6 col-md-4 mb-3">
+            <div class="feature-stat card text-center h-100" style="border-color: var(--color-legitimate); border-width: 2px;">
+                <div class="card-body py-2">
+                    <div class="stat-icon category-legitimate mb-1">
+                        <i class="fas fa-check-circle fa-xl"></i>
+                    </div>
+                    <h6 class="category-legitimate mb-1">Not Spam</h6>
+                    <p class="small fw-bold text-secondary mb-0">Safe content</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-6 col-md-4 mb-3">
+            <div class="feature-stat card text-center h-100" style="border-color: var(--color-promotion); border-width: 2px;">
+                <div class="card-body py-2">
+                    <div class="stat-icon category-promotion mb-1">
+                        <i class="fas fa-bullhorn fa-xl"></i>
+                    </div>
+                    <h6 class="category-promotion mb-1">Promotion</h6>
+                    <p class="small fw-bold text-secondary mb-0">Marketing</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-6 col-md-4 mb-3">
+            <div class="feature-stat card text-center h-100" style="border-color: var(--color-phishing); border-width: 2px;">
+                <div class="card-body py-2">
+                    <div class="stat-icon category-phishing mb-1">
+                        <i class="fas fa-skull-crossbones fa-xl"></i>
+                    </div>
+                    <h6 class="category-phishing mb-1">Phishing</h6>
+                    <p class="small fw-bold text-secondary mb-0">Credential theft</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-6 col-md-4 mb-3">
+            <div class="feature-stat card text-center h-100" style="border-color: var(--color-malware); border-width: 2px;">
+                <div class="card-body py-2">
+                    <div class="stat-icon category-malware mb-1">
+                        <i class="fas fa-virus fa-xl"></i>
+                    </div>
+                    <h6 class="category-malware mb-1">Malware</h6>
+                    <p class="small fw-bold text-secondary mb-0">Malicious</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-6 col-md-4 mb-3">
+            <div class="feature-stat card text-center h-100" style="border-color: var(--color-newsletter); border-width: 2px;">
+                <div class="card-body py-2">
+                    <div class="stat-icon category-newsletter mb-1">
+                        <i class="fas fa-newspaper fa-xl"></i>
+                    </div>
+                    <h6 class="category-newsletter mb-1">Newsletter</h6>
+                    <p class="small fw-bold text-secondary mb-0">Subscription</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-6 col-md-4 mb-3">
+            <div class="feature-stat card text-center h-100" style="border-color: var(--color-spam) !important; border-width: 2px !important;">
+                <div class="card-body py-2">
+                    <div class="stat-icon mb-1" style="color: var(--color-spam);">
+                        <i class="fas fa-exclamation-triangle fa-xl"></i>
+                    </div>
+                    <h6 class="mb-1" style="color: var(--color-spam);">Spam</h6>
+                    <p class="small fw-bold text-secondary mb-0">Unwanted</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Risk Level Legend -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-line"></i> Risk Level Guide
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-2">
+                        <div class="col-6 col-md-4">
+                            <span class="badge bg-success me-2">🟢 Low</span>
+                            <small class="text-active">0-40</small>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <span class="badge bg-warning text-dark me-2">⚠️ Medium</span>
+                            <small class="text-active">41-60</small>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <span class="badge bg-danger me-2">🔴 High</span>
+                            <small class="text-active">61-100</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Security Tips -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-lightbulb"></i> Security Best Practices
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6 class="text-primary">
+                                <i class="fas fa-shield-alt"></i> Email Security
+                            </h6>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <i class="fas fa-check-circle text-success"></i>
+                                    Never click suspicious links in emails
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-check-circle text-success"></i>
+                                    Verify sender identity before sharing information
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-check-circle text-success"></i>
+                                    Check email addresses carefully for typos
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <h6 class="text-primary">
+                                <i class="fas fa-lock"></i> Account Protection
+                            </h6>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <i class="fas fa-check-circle text-success"></i>
+                                    Use two-factor authentication when available
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-check-circle text-success"></i>
+                                    Keep your browser and antivirus updated
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-check-circle text-success"></i>
+                                    Use strong, unique passwords
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <h6 class="text-primary">
+                                <i class="fas fa-exclamation-triangle"></i> Warning Signs
+                            </h6>
+                            <ul class="list-unstyled">
+                                <li class="mb-2">
+                                    <i class="fas fa-times-circle text-danger"></i>
+                                    Urgent or threatening messages
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-times-circle text-danger"></i>
+                                    Requests for sensitive information
+                                </li>
+                                <li class="mb-2">
+                                    <i class="fas fa-times-circle text-danger"></i>
+                                    Unexpected attachments or downloads
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Enhanced Text Analysis Modal -->
+<div class="modal fade" id="textAnalysisModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-file-alt"></i> AI Text Analysis
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-5">
+                        <form id="textAnalysisForm">
+                            <div class="mb-3">
+                                <label for="analysisText" class="form-label">Enter text to analyze:</label>
+                                <textarea class="form-control" id="analysisText" rows="8" 
+                                        placeholder="Paste email content or any text you want to analyze for spam indicators..."></textarea>
+                                <div id="textValidationError" class="alert alert-danger mt-2 d-none" role="alert">
+                                    <i class="fas fa-exclamation-circle me-2"></i>
+                                    <span id="textValidationMessage">Please enter some text to analyze.</span>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary flex-fill" id="analyzeBtn">
+                                    <span class="btn-content">
+                                        <i class="fas fa-search"></i> Analyze Text
+                                    </span>
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" id="clearBtn">
+                                    <i class="fas fa-eraser"></i> Clear
+                                </button>
+                            </div>
+                        </form>
+                        
+                        <div class="mt-3">
+                            <small class="text-muted">
+                                <strong>Try these examples:</strong><br>
+                                • "URGENT: Your account will be suspended!"<br>
+                                • "50% off sale this weekend only!"<br>
+                                • "Meeting tomorrow at 3 PM"
+                            </small>
+                        </div>
+                    </div>
+                    <div class="col-md-7">
+                        <div id="analysisResults" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0">Analysis Results:</h6>
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="analyzeAgainBtn">
+                                    <i class="fas fa-redo"></i> Analyze Again
+                                </button>
+                            </div>
+                            <div id="resultsContent"></div>
+                        </div>
+                        <div id="analysisPlaceholder" class="text-center text-muted py-5">
+                            <i class="fas fa-chart-pie fa-3x mb-3 opacity-50"></i>
+                            <p class="d-none d-md-block">Enter text and click "Analyze Text" to see detailed results here.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.welcome-card {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+    border: none;
+}
+
+.action-icon {
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.feature-stat {
+    transition: transform 0.2s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-width: 2px !important;
+}
+
+.feature-stat:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.stat-icon {
+    opacity: 0.8;
+    position: relative;
+}
+
+.category-progress {
+    height: 8px;
+    border-radius: 4px;
+    background-color: rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+
+.category-progress .progress-bar {
+    border-radius: 4px;
+    transition: width 0.6s ease;
+}
+
+.result-card {
+    border: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    margin-bottom: 1rem;
+}
+
+.category-badge {
+    font-size: 1rem;
+    padding: 0.5rem 1rem;
+}
+
+/* Floating modal for all devices */
+#textAnalysisModal .modal-dialog.modal-lg {
+    margin: 1.5rem auto;
+}
+
+#textAnalysisModal .modal-content {
+    max-height: 90vh;
+    border-radius: 12px;
+}
+
+#textAnalysisModal .modal-body {
+    overflow-y: auto;
+    max-height: calc(90vh - 130px);
+}
+
+/* Prevent background scrolling when modal is open (all devices) */
+body.modal-open {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+}
+
+/* Fixed Button Loading States */
+.btn-loading {
+    position: relative;
+    pointer-events: none;
+}
+
+/* Show spinner next to button text */
+.btn-loading .btn-content .btn-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+    .btn-loading .btn-content .btn-spinner {
+        animation: spin 0.6s linear infinite;
+        will-change: transform;
+    }
+}
+
+/* Risk level badge styling */
+.badge.bg-warning.text-dark {
+    color: #000 !important;
+}
+
+@media (max-width: 768px) {   
+    .feature-stat h6 {
+        font-size: 0.9rem;
+    }
+    
+    .feature-stat p {
+        font-size: 0.8rem;
+    }
+    
+    /* Dashboard Mobile - Use base.html container padding (10px) */
+    .row {
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    .row > * {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    
+    /* Fix welcome card on mobile */
+    .welcome-card .card-body {
+        padding: 1rem !important;
+    }
+    
+    .welcome-card h2 {
+        font-size: 1.25rem !important;
+    }
+    
+    .welcome-card .col-md-4 {
+        margin-top: 0.75rem !important;
+        text-align: center !important;
+    }
+    
+    /* Quick actions - single column */
+    .action-card {
+        margin-bottom: 0.75rem;
+    }
+    
+    /* AI Protection Categories - single column */
+    .feature-stat {
+        margin-bottom: 0.5rem !important;
+    }
+    
+    /* Analysis results compact on mobile */
+    #analysisResults {
+        padding: 0.75rem !important;
+    }
+    #analysisResults .result-card .card-body {
+        padding: 0.6rem;
+    }
+    #analysisResults .result-card .card-body > .mb-1 {
+        font-size: 1.3rem !important;
+    }
+    #analysisResults .result-card .fs-5 {
+        font-size: 0.95rem !important;
+    }
+    #analysisResults .result-card .badge {
+        font-size: 0.7rem;
+        padding: 0.3rem 0.5rem;
+    }
+    #analysisResults .result-card .card-subtitle {
+        font-size: 0.75rem;
+    }
+    #analysisResults .result-card .card-body > .mb-2 {
+        margin-bottom: 0.4rem !important;
+    }
+    
+    /* Risk level legend */
+    .card-body .mb-2 {
+        margin-bottom: 0.5rem !important;
+    }
+}
+
+/* Extra small mobile */
+@media (max-width: 359px) {
+    .container {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+    
+    h2 {
+        font-size: 1.1rem !important;
+    }
+    
+    h4 {
+        font-size: 1rem !important;
+    }
+}
+
+</style>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Global variables
+let isAnalyzing = false;
+
+// Initialize when DOM loads
+document.addEventListener('DOMContentLoaded', function() {
+    initializeEventListeners();
+});
+
+
+
+function initializeEventListeners() {
+    // Text analysis form
+    const textForm = document.getElementById('textAnalysisForm');
+    if (textForm) {
+        textForm.addEventListener('submit', handleTextAnalysis);
+    }
+    
+    // Clear button
+    const clearBtn = document.getElementById('clearBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearTextAnalysis);
+    }
+    
+    // Analyze again button
+    const againBtn = document.getElementById('analyzeAgainBtn');
+    if (againBtn) {
+        againBtn.addEventListener('click', function() {
+            showAnalysisForm();
+        });
+    }
+    
+    // Reset modal when closed
+    const modal = document.getElementById('textAnalysisModal');
+    if (modal) {
+        modal.addEventListener('hidden.bs.modal', function () {
+            resetTextAnalysisModal();
+        });
+    }
+    
+    // Hide validation error when user starts typing
+    const analysisText = document.getElementById('analysisText');
+    if (analysisText) {
+        analysisText.addEventListener('input', function() {
+            const validationError = document.getElementById('textValidationError');
+            if (validationError && !validationError.classList.contains('d-none')) {
+                validationError.classList.add('d-none');
+                this.classList.remove('is-invalid');
+            }
+        });
+    }
+}
+
+function handleTextAnalysis(e) {
+    e.preventDefault();
+    
+    if (isAnalyzing) return;
+    
+    const text = document.getElementById('analysisText').value.trim();
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const resultsDiv = document.getElementById('analysisResults');
+    const resultsContent = document.getElementById('resultsContent');
+    const placeholder = document.getElementById('analysisPlaceholder');
+    const validationError = document.getElementById('textValidationError');
+    
+    if (!text) {
+        // Show inline error message instead of browser alert
+        validationError.classList.remove('d-none');
+        document.getElementById('analysisText').classList.add('is-invalid');
+        return;
+    }
+    
+    // Hide validation error if text is present
+    validationError.classList.add('d-none');
+    document.getElementById('analysisText').classList.remove('is-invalid');
+    
+    isAnalyzing = true;
+    
+    // Show loading state
+    setButtonLoading(analyzeBtn, 'Analyzing...');
+    placeholder.style.display = 'none';
+    resultsDiv.style.display = 'block';
+    resultsContent.innerHTML = createLoadingSpinner('Analyzing text with AI...');
+    
+    // Backup timer to ensure loading state is removed after 30 seconds
+    const backupTimer = setTimeout(() => {
+        if (isAnalyzing) {
+            console.warn('Analysis timed out - forcing cleanup');
+            isAnalyzing = false;
+            removeButtonLoading(analyzeBtn);
+            resultsContent.innerHTML = createErrorMessage('Analysis is taking too long. Please try again with shorter text.');
+        }
+    }, 30000);
+    
+    // Make API call with timeout
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 25000); // 25 second timeout
+    
+    fetch('/api/analyze_text', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({text: text}),
+        signal: controller.signal
+    })
+    .then(response => {
+        clearTimeout(fetchTimeout);
+        clearTimeout(backupTimer);
+        if (!response.ok) {
+            throw new Error('Network response was not ok: ' + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        clearTimeout(backupTimer);
+        if (data.error) {
+            resultsContent.innerHTML = createErrorMessage(data.error);
+        } else {
+            displayAnalysisResults(data);
+        }
+    })
+    .catch(error => {
+        clearTimeout(fetchTimeout);
+        clearTimeout(backupTimer);
+        console.error('Analysis error:', error);
+        if (error.name === 'AbortError') {
+            resultsContent.innerHTML = createErrorMessage('Analysis timed out. Please try again with shorter text.');
+        } else {
+            resultsContent.innerHTML = createErrorMessage('Error: ' + error.message);
+        }
+    })
+    .finally(() => {
+        clearTimeout(backupTimer);
+        isAnalyzing = false;
+        removeButtonLoading(analyzeBtn);
+    });
+}
+
+function displayAnalysisResults(data) {
+    // Show results in the modal for all devices
+    displayAnalysisResultsDesktop(data);
+}
+
+function displayAnalysisResultsDesktop(data) {
+    const resultsContent = document.getElementById('resultsContent');
+    const categoryKey = data.category || 'legitimate';
+    const categoryIcon = data.category_info ? data.category_info.icon : 'question-circle';
+    const categoryDescription = data.category_info ? data.category_info.description : 'Unknown category';
+    const displayName = data.category_info ? data.category_info.display_name : data.category;
+    
+    // Get risk color based on level
+    const riskColorInfo = getRiskColorInfo(data.risk_level);
+    
+    resultsContent.innerHTML = `
+        <!-- Main Classification Result -->
+        <div class="result-card card mb-3" style="border-color: var(--color-${categoryKey}); border-width: 2px;">
+            <div class="card-body text-center">
+                <div class="mb-2" style="font-size: 3.5rem; color: var(--color-${categoryKey});">
+                    <i class="fas fa-${categoryIcon}"></i>
+                </div>
+                <h4 class="card-title fw-bold mb-1" style="color: var(--color-${escapeHtml(categoryKey)});">${escapeHtml(displayName)}</h4>
+                <p class="text-muted mb-0">${escapeHtml(categoryDescription)}</p>
+            </div>
+        </div>
+
+        <!-- Risk and Confidence Metrics -->
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-lg-4">
+                <div class="card text-center result-card h-100">
+                    <div class="card-body d-flex flex-column align-items-center justify-content-center">
+                        <div class="mb-1" style="font-size: 1.8rem; color: ${riskColorInfo.color === 'danger' ? '#ef4444' : riskColorInfo.color === 'warning' ? '#f97316' : '#22c55e'};">
+                            <i class="fas fa-${riskColorInfo.icon}"></i>
+                        </div>
+                        <h6 class="card-subtitle mb-2 text-muted">Risk Level</h6>
+                        <div class="fs-5 fw-bold mb-1 ${riskColorInfo.color === 'warning' ? 'text-warning' : riskColorInfo.color === 'info' ? 'text-info' : 'text-' + riskColorInfo.color}">
+                            ${data.risk_score}
+                        </div>
+                        <span class="badge ${riskColorInfo.color === 'warning' ? 'bg-warning' : riskColorInfo.color === 'info' ? 'bg-info' : 'bg-' + riskColorInfo.color}">
+                            ${riskColorInfo.emoji} ${data.risk_level ? data.risk_level.toUpperCase() : 'UNKNOWN'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-4">
+                <div class="card text-center result-card h-100">
+                    <div class="card-body d-flex flex-column align-items-center justify-content-center">
+                        <div class="mb-1" style="font-size: 1.8rem; color: ${(data.confidence || 0) >= 80 ? '#22c55e' : (data.confidence || 0) >= 50 ? '#f97316' : '#ef4444'};">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <h6 class="card-subtitle mb-2 text-muted">Confidence</h6>
+                        <div class="fs-5 fw-bold mb-1" style="color: ${(data.confidence || 0) >= 80 ? '#22c55e' : (data.confidence || 0) >= 50 ? '#f97316' : '#ef4444'};">
+                            ${Math.round(data.confidence || 0)}%
+                        </div>
+                        <span class="badge" style="background-color: ${(data.confidence || 0) >= 80 ? '#22c55e' : (data.confidence || 0) >= 50 ? '#f97316' : '#ef4444'};">
+                            ${(data.confidence || 0) >= 80 ? 'HIGH' : (data.confidence || 0) >= 50 ? 'MEDIUM' : 'LOW'}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-lg-4">
+                <div class="card text-center result-card h-100">
+                    <div class="card-body d-flex flex-column align-items-center justify-content-center">
+                        <div class="mb-1" style="font-size: 1.8rem; color: var(--color-${categoryKey});">
+                            <i class="fas fa-tag"></i>
+                        </div>
+                        <h6 class="card-subtitle mb-2 text-muted">Category</h6>
+                        <div class="fs-5 fw-bold mb-1" style="color: var(--color-${categoryKey});">
+                            ${displayName}
+                        </div>
+                        <span class="badge" style="background-color: var(--color-${categoryKey});">
+                            ${displayName}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Probabilities -->
+        <div class="card result-card">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-chart-bar"></i> Category Probabilities
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        ${createProbabilityBar('<i class="fas fa-check-circle" style="color: var(--color-legitimate);"></i> Not Spam', data.probabilities ? data.probabilities.legitimate : 0, 'legitimate')}
+                        ${createProbabilityBar('<i class="fas fa-bullhorn" style="color: var(--color-promotion);"></i> Promotion', data.probabilities ? data.probabilities.promotion : 0, 'promotion')}
+                        ${createProbabilityBar('<i class="fas fa-exclamation-triangle" style="color: var(--color-spam);"></i> Spam', data.probabilities ? data.probabilities.spam : 0, 'spam')}
+                    </div>
+                    <div class="col-md-6">
+                        ${createProbabilityBar('<i class="fas fa-skull-crossbones" style="color: var(--color-phishing);"></i> Phishing', data.probabilities ? data.probabilities.phishing : 0, 'phishing')}
+                        ${createProbabilityBar('<i class="fas fa-virus" style="color: var(--color-malware);"></i> Malware', data.probabilities ? data.probabilities.malware : 0, 'malware')}
+                        ${createProbabilityBar('<i class="fas fa-newspaper" style="color: var(--color-newsletter);"></i> Newsletter', data.probabilities ? data.probabilities.newsletter : 0, 'newsletter')}
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Show the results
+    document.getElementById('analysisResults').style.display = 'block';
+    document.getElementById('analysisPlaceholder').style.display = 'none';
+}
+
+function clearTextAnalysis() {
+    document.getElementById('analysisText').value = '';
+    document.getElementById('analysisResults').style.display = 'none';
+    document.getElementById('analysisPlaceholder').style.display = 'block';
+    document.getElementById('analysisText').focus();
+}
+
+function showAnalysisForm() {
+    // Reset the form in the modal for all devices
+    document.getElementById('analysisResults').style.display = 'none';
+    document.getElementById('analysisPlaceholder').style.display = 'block';
+    document.getElementById('analysisText').focus();
+}
+
+function resetTextAnalysisModal() {
+    document.getElementById('analysisText').value = '';
+    document.getElementById('analysisResults').style.display = 'none';
+    document.getElementById('analysisPlaceholder').style.display = 'block';
+    isAnalyzing = false;
+    
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    removeButtonLoading(analyzeBtn);
+}
+
+function setButtonLoading(button, loadingText) {
+    if (!button) return;
+    
+    button.classList.add('btn-loading');
+    button.style.pointerEvents = 'none'; // Extra protection against clicks
+    button.style.opacity = '0.8';
+    button.disabled = true;
+    
+    // Keep original text visible, just add spinner
+    const btnContent = button.querySelector('.btn-content');
+    if (btnContent) {
+        btnContent.setAttribute('data-original', btnContent.innerHTML);
+        // Keep the original text, add spinner next to it
+        btnContent.innerHTML = btnContent.innerHTML + ' <span class="btn-spinner"></span>';
+    }
+}
+
+function removeButtonLoading(button) {
+    if (!button) return;
+    
+    button.classList.remove('btn-loading');
+    button.style.pointerEvents = '';
+    button.style.opacity = '';
+    button.disabled = false;
+    
+    // Remove the spinner, keep original text
+    const btnContent = button.querySelector('.btn-content');
+    if (btnContent) {
+        const originalContent = btnContent.getAttribute('data-original');
+        if (originalContent) {
+            btnContent.innerHTML = originalContent;
+            btnContent.removeAttribute('data-original');
+        }
+        // Also remove spinner if present
+        const spinner = btnContent.querySelector('.btn-spinner');
+        if (spinner) {
+            spinner.remove();
+        }
+    }
+}
+
+function createProbabilityBar(label, probability, color) {
+    const percentage = Math.round(probability || 0);
+    const colorVar = `var(--color-${color})`;
+    return `
+        <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <small class="text-dark">${label}:</small>
+                <small class="fw-bold text-dark">${percentage}%</small>
+            </div>
+            <div class="category-progress">
+                <div class="progress-bar" style="width: ${percentage}%; background-color: ${colorVar};"></div>
+            </div>
+        </div>
+    `;
+}
+
+function createLoadingSpinner(text = 'Loading...') {
+    return `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-muted">${text}</p>
+        </div>
+    `;
+}
+
+function createErrorMessage(message) {
+    return `
+        <div class="alert alert-danger" role="alert">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Error:</strong> ${message}
+        </div>
+    `;
+}
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getRiskColorInfo(riskLevel) {
+    const riskColors = {
+        'Low': {
+            'color': 'success',
+            'emoji': '🟢',
+            'icon': 'shield-alt'
+        },
+        'Medium': {
+            'color': 'warning',
+            'emoji': '⚠️',
+            'icon': 'exclamation-triangle'
+        },
+        'High': {
+            'color': 'danger',
+            'emoji': '🔴',
+            'icon': 'bolt'
+        }
+    };
+    
+    // Backward compatibility for legacy 5-level values
+    const legacyMap = {
+        'Very Low': 'Low',
+        'Critical': 'High'
+    };
+    return riskColors[legacyMap[riskLevel] || riskLevel] || riskColors['Low'];
+}
+
+function showAlert(message, type = 'info') {
+    alert(message);
+}
+
+// ============================================================================
+// ASYNC EMAIL ANALYSIS WITH PROGRESS
+// ============================================================================
+
+let analysisPollingInterval = null;
+let currentTaskId = null;
+let isRateLimited = false;
+
+function startAsyncAnalysis() {
+    const btn = document.getElementById('analyzeEmailsBtn');
+    
+    if (btn.disabled || isRateLimited) return;
+
+    // Stale cooldown check from previous session (survives page refresh)
+    const stored = localStorage.getItem('rateLimitCooldown');
+    if (stored) {
+        const remaining = Math.ceil((parseInt(stored) - Date.now()) / 1000);
+        if (remaining > 0) {
+            startRateLimitCountdown(remaining);
+            return;
+        }
+        localStorage.removeItem('rateLimitCooldown');
+    }
+
+    // Disable button
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-content"><i class="fas fa-spinner fa-spin"></i> Starting...</span>';
+    
+    // Show loading modal
+    showAnalysisModal();
+    
+    // AbortController with 50-second timeout
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 50000);
+    
+    // Start analysis via API
+    fetch('/api/start_analysis', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        signal: controller.signal
+    })
+    .then(response => {
+        clearTimeout(fetchTimeout);
+        if (response.status === 429) {
+            return response.json().then(data => {
+                const err = new Error(data.message || 'Rate limit exceeded');
+                err.retryAfter = data.retry_after || 60;
+                throw err;
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.error) {
+            throw new Error(data.error);
+        }
+        
+        const taskId = data.task_id;
+        currentTaskId = taskId;  // Store for cancellation
+        updateModalStatus(0, 'Analysis started. Waiting for progress...');
+        
+        // Start polling for progress
+        startProgressPolling(taskId);
+    })
+    .catch(error => {
+        clearTimeout(fetchTimeout);
+        console.error('Error starting analysis:', error);
+        currentTaskId = null;
+        if (error.name === 'AbortError') {
+            updateModalStatus(0, 'Analysis timed out. Please try again.', true);
+            resetAnalysisButton();
+        } else if (error.retryAfter) {
+            localStorage.setItem('rateLimitCooldown', Date.now() + (error.retryAfter * 1000));
+            updateModalStatus(0, `Rate limit reached. Please wait ${error.retryAfter}s...`, true);
+            startRateLimitCountdown(error.retryAfter);
+        } else {
+            updateModalStatus(0, 'Failed to start analysis: ' + error.message, true);
+            resetAnalysisButton();
+        }
+    });
+}
+
+function startProgressPolling(taskId) {
+    // Clear any existing interval
+    if (analysisPollingInterval) {
+        clearInterval(analysisPollingInterval);
+    }
+    
+    // Poll every 500ms
+    analysisPollingInterval = setInterval(() => {
+        fetch(`/api/analysis_status/${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            updateModalStatus(data.progress, data.status);
+            
+            if (data.complete) {
+                // Stop polling
+                clearInterval(analysisPollingInterval);
+                analysisPollingInterval = null;
+                currentTaskId = null;  // Clear task ID on completion
+                
+                if (data.error) {
+                    // Show error
+                    updateModalStatus(data.progress, 'Analysis failed: ' + data.error, true);
+                    resetAnalysisButton();
+                } else {
+                    // Show success and redirect
+                    updateModalStatus(100, 'Analysis complete! Redirecting to results...');
+                    setTimeout(() => {
+                        window.location.href = '/results';
+                    }, 1500);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error polling status:', error);
+            clearInterval(analysisPollingInterval);
+            analysisPollingInterval = null;
+            currentTaskId = null;  // Clear task ID on error
+            updateModalStatus(0, 'Error checking progress: ' + error.message, true);
+            resetAnalysisButton();
+        });
+    }, 500);
+}
+
+let analysisStartTime = null;
+let analysisTimerInterval = null;
+
+function showAnalysisModal() {
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('analysisProgressModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'analysisProgressModal';
+        modal.className = 'modal fade show';
+        modal.style.display = 'block';
+        modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content" style="border: none; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                    <div class="modal-header bg-gradient-primary text-white border-0" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);">
+                        <h5 class="modal-title fw-bold">
+                            <i class="fas fa-search me-2"></i> Analyzing Your Inbox
+                        </h5>
+                    </div>
+                    <div class="modal-body text-center py-5">
+                        <!-- Animated Icon -->
+                        <div class="mb-4">
+                            <div class="analysis-icon-container" style="width: 80px; height: 80px; margin: 0 auto; position: relative;">
+                                <div class="custom-spinner" style="width: 80px; height: 80px; border: 4px solid rgba(14, 165, 233, 0.2); border-top: 4px solid #0ea5e9; border-radius: 50%; animation: spin 1s linear infinite;">
+                                </div>
+                                <i class="fas fa-envelope-open-text position-absolute" style="top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; color: #0ea5e9;"></i>
+                            </div>
+                        </div>
+                        
+                        <!-- Progress Bar with Gradient -->
+                        <div class="mb-4 px-2">
+                            <div class="progress" style="height: 35px; border-radius: 20px; background: linear-gradient(90deg, #e0e7ff 0%, #f0f9ff 100%); box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); overflow: hidden;">
+                                <div id="analysisProgressBar" class="progress-bar" 
+                                     role="progressbar" style="width: 0%; border-radius: 20px; background: linear-gradient(90deg, #0ea5e9 0%, #06b6d4 50%, #22c55e 100%); box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4); transition: width 0.3s ease-out; position: relative; overflow: hidden;">
+                                    <span id="analysisProgressText" class="fw-bold d-flex align-items-center justify-content-center h-100" style="text-shadow: 0 1px 2px rgba(0,0,0,0.2); font-size: 1rem;">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Status Text -->
+                        <p id="analysisStatusText" class="mb-2 fw-bold fs-5" style="color: #1e293b;">Initializing...</p>
+                        
+                        <!-- Elapsed Time -->
+                        <div class="mb-3">
+                            <span class="badge bg-light text-dark px-3 py-2" style="border-radius: 20px; font-size: 0.9rem;">
+                                <i class="fas fa-clock me-1" style="color: #0ea5e9;"></i>
+                                Elapsed: <span id="elapsedTime" class="fw-bold">0s</span>
+                            </span>
+                        </div>
+                        
+                        <small class="text-muted d-block">Please wait while we analyze your emails with AI</small>
+                        
+                        <!-- Cancel Button -->
+                        <button type="button" class="btn btn-outline-danger mt-4 px-4" onclick="cancelAnalysis()" style="border-radius: 25px; font-weight: 600;">
+                            <i class="fas fa-times me-1"></i> Cancel Analysis
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } else {
+        modal.className = 'modal fade show';
+        modal.style.display = 'block';
+        modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    }
+    
+    // Start elapsed time timer
+    analysisStartTime = Date.now();
+    if (analysisTimerInterval) {
+        clearInterval(analysisTimerInterval);
+    }
+    analysisTimerInterval = setInterval(updateElapsedTime, 1000);
+}
+
+function updateElapsedTime() {
+    if (!analysisStartTime) return;
+    
+    const elapsed = Math.floor((Date.now() - analysisStartTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    
+    const elapsedTimeEl = document.getElementById('elapsedTime');
+    if (elapsedTimeEl) {
+        if (minutes > 0) {
+            elapsedTimeEl.textContent = `${minutes}m ${seconds}s`;
+        } else {
+            elapsedTimeEl.textContent = `${seconds}s`;
+        }
+    }
+}
+
+function updateModalStatus(progress, status, isError = false) {
+    const progressBar = document.getElementById('analysisProgressBar');
+    const progressText = document.getElementById('analysisProgressText');
+    const statusText = document.getElementById('analysisStatusText');
+    
+    if (progressBar) {
+        progressBar.style.width = progress + '%';
+        progressBar.setAttribute('aria-valuenow', progress);
+        
+        if (isError) {
+            progressBar.className = 'progress-bar bg-danger';
+        } else if (progress >= 100) {
+            progressBar.className = 'progress-bar bg-success';
+        } else {
+            progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated';
+        }
+    }
+    
+    if (progressText) {
+        progressText.textContent = progress + '%';
+    }
+    
+    if (statusText) {
+        statusText.textContent = status;
+        if (isError) {
+            statusText.className = 'mb-0 fw-bold text-danger';
+        } else if (progress >= 100) {
+            statusText.className = 'mb-0 fw-bold text-success';
+        } else {
+            statusText.className = 'mb-0 fw-bold';
+        }
+    }
+}
+
+function startRateLimitCountdown(seconds) {
+    const btn = document.getElementById('analyzeEmailsBtn');
+    if (!btn) return;
+    isRateLimited = true;
+    btn.disabled = true;
+    let remaining = seconds;
+    const interval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(interval);
+            isRateLimited = false;
+            localStorage.removeItem('rateLimitCooldown');
+            resetAnalysisButton();
+        } else {
+            btn.innerHTML = `<span class="btn-content"><i class="fas fa-hourglass-half"></i> Wait ${remaining}s...</span>`;
+        }
+    }, 1000);
+}
+
+function resetAnalysisButton() {
+    const btn = document.getElementById('analyzeEmailsBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span class="btn-content"><i class="fas fa-play"></i> Start Analysis</span>';
+    }
+}
+
+async function cancelAnalysis() {
+    // If no task ID, just clean up frontend
+    if (!currentTaskId) {
+        console.log('No active task to cancel');
+        if (analysisPollingInterval) {
+            clearInterval(analysisPollingInterval);
+            analysisPollingInterval = null;
+        }
+        if (analysisTimerInterval) {
+            clearInterval(analysisTimerInterval);
+            analysisTimerInterval = null;
+        }
+        hideAnalysisModal();
+        resetAnalysisButton();
+        return;
+    }
+    
+    const taskId = currentTaskId;
+    
+    // Update UI to show cancelling state
+    updateModalStatus(0, 'Cancelling analysis...', true);
+    
+    // Stop polling immediately
+    if (analysisPollingInterval) {
+        clearInterval(analysisPollingInterval);
+        analysisPollingInterval = null;
+    }
+    if (analysisTimerInterval) {
+        clearInterval(analysisTimerInterval);
+        analysisTimerInterval = null;
+    }
+    
+    try {
+        // Call cancel API
+        const response = await fetch(`/api/cancel_analysis/${taskId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        console.log('Analysis cancelled on server:', data);
+        
+    } catch (err) {
+        console.error('Cancel API call failed:', err);
+        // Continue with frontend cleanup even if API fails
+    }
+    
+    // Hide modal
+    hideAnalysisModal();
+    
+    // Reset button
+    resetAnalysisButton();
+    
+    // Clear task ID
+    currentTaskId = null;
+    
+    console.log('Analysis cancelled by user');
+}
+
+function hideAnalysisModal() {
+    const modal = document.getElementById('analysisProgressModal');
+    if (modal) {
+        modal.style.display = 'none';
+        modal.className = 'modal fade';
+    }
+    currentTaskId = null;  // Clear task ID when modal is hidden
+}
+
+// Clean up polling on page unload
+window.addEventListener('beforeunload', function() {
+    if (analysisPollingInterval) {
+        clearInterval(analysisPollingInterval);
+    }
+});
+
+// Hide modal on pageshow (fires when navigating back via back button)
+window.onpageshow = function(event) {
+    // Remove any dynamically created modal
+    const modal = document.getElementById('analysisProgressModal');
+    if (modal) {
+        modal.remove();
+    }
+    // Remove any leftover Bootstrap modal backdrops
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    backdrops.forEach(backdrop => backdrop.remove());
+    // Remove modal-open class from body
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    // Reset button state
+    resetAnalysisButton();
+    currentTaskId = null;  // Clear task ID on page show
+};
+
+// Also hide on DOMContentLoaded as backup
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('analysisProgressModal');
+    if (modal) {
+        modal.remove();
+    }
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    backdrops.forEach(backdrop => backdrop.remove());
+    document.body.classList.remove('modal-open');
+    resetAnalysisButton();
+    currentTaskId = null;  // Clear task ID on DOM load
+    
+    // Auto-update dashboard time every second
+    updateDashboardTime();
+    setInterval(updateDashboardTime, 1000);
+
+    // Check for active rate limit cooldown from previous session
+    const stored = localStorage.getItem('rateLimitCooldown');
+    if (stored) {
+        const remaining = Math.ceil((parseInt(stored) - Date.now()) / 1000);
+        if (remaining > 0) {
+            startRateLimitCountdown(remaining);
+        } else {
+            localStorage.removeItem('rateLimitCooldown');
+        }
+    }
+});
+
+function updateDashboardTime() {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    
+    // Update the DOM element - find the time display in welcome card
+    const welcomeCard = document.querySelector('.welcome-card .card-body');
+    if (welcomeCard) {
+        const timeElement = welcomeCard.querySelector('small');
+        if (timeElement) {
+            timeElement.innerHTML = `<i class="fas fa-clock me-1"></i> ${timeStr} • ${dateStr}`;
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SpamProtection - AI Email Security{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- Global Mobile Styles -->
+    <style>
+        /* Standard Category Colors - Global Application Wide */
+        .bg-phishing {
+            background-color: var(--color-phishing) !important;
+            color: #ffffff !important;
+        }
+        
+        .bg-phishing * {
+            color: #ffffff !important;
+        }
+        
+        .category-spam { color: var(--color-spam) !important; }
+        .category-legitimate { color: var(--color-legitimate) !important; }
+        .category-promotion { color: var(--color-promotion) !important; }
+        .category-phishing { color: var(--color-phishing) !important; }
+        .category-malware { color: var(--color-malware) !important; }
+        .category-newsletter { color: var(--color-newsletter) !important; }
+        
+        .bg-spam { background-color: var(--color-spam) !important; color: white !important; }
+        .bg-legitimate { background-color: var(--color-legitimate) !important; color: white !important; }
+        .bg-promotion { background-color: var(--color-promotion) !important; color: white !important; }
+        .bg-malware { background-color: var(--color-malware) !important; color: white !important; }
+        .bg-newsletter { background-color: var(--color-newsletter) !important; color: white !important; }
+        
+        /* Prevent horizontal overflow on all devices */
+        html, body {
+            overflow-x: hidden;
+            max-width: 100vw;
+        }
+        
+        /* Ensure all containers fit properly */
+        .container, .container-fluid {
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        
+        /* Flash Messages - Responsive for all devices */
+        .flash-messages-container {
+            width: 100%;
+            padding: 12px 16px 0;
+            position: relative;
+            z-index: 1020;
+        }
+        
+        .flash-alert {
+            margin-bottom: 10px;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 0.95rem;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .flash-alert .flash-message-text {
+            flex: 1;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        
+        .flash-alert .btn-close {
+            flex-shrink: 0;
+            margin-left: 12px;
+            padding: 8px;
+            min-width: 24px;
+            min-height: 24px;
+        }
+        
+        /* Success alert styling override */
+        .flash-alert.alert-success {
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            color: #065f46;
+            border-left: 4px solid #10b981;
+        }
+        
+        /* Info alert styling override */
+        .flash-alert.alert-info {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            color: #1e40af;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        /* Warning alert styling override */
+        .flash-alert.alert-warning {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #92400e;
+            border-left: 4px solid #f59e0b;
+        }
+        
+/* Danger/Error alert styling override */
+.flash-alert.alert-danger {
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    color: #991b1b;
+    border-left: 4px solid #ef4444;
+}
+
+/* Dark mode overrides for flash alerts */
+@media (prefers-color-scheme: dark) {
+    .flash-alert.alert-success {
+        background: linear-gradient(135deg, #0d6b4b 0%, #0a8f5c 100%);
+        color: #d1fae5;
+        border-left: 4px solid #4ade80;
+        box-shadow: 0 2px 12px rgba(34, 197, 94, 0.25);
+    }
+    .flash-alert.alert-info {
+        background: linear-gradient(135deg, #1e4d8c 0%, #2563eb 100%);
+        color: #dbeafe;
+        border-left: 4px solid #60a5fa;
+        box-shadow: 0 2px 12px rgba(59, 130, 246, 0.25);
+    }
+    .flash-alert.alert-warning {
+        background: linear-gradient(135deg, #92400e 0%, #b45309 100%);
+        color: #fef3c7;
+        border-left: 4px solid #fbbf24;
+        box-shadow: 0 2px 12px rgba(245, 158, 11, 0.25);
+    }
+    .flash-alert.alert-danger {
+        background: linear-gradient(135deg, #991b1b 0%, #b91c1c 100%);
+        color: #fee2e2;
+        border-left: 4px solid #f87171;
+        box-shadow: 0 2px 12px rgba(239, 68, 68, 0.25);
+    }
+    .flash-alert .btn-close {
+        filter: invert(1);
+    }
+}
+
+/* Mobile adjustments for flash messages */
+        @media (max-width: 768px) {
+            .flash-messages-container {
+                padding: 8px 10px 0;
+            }
+            
+            .flash-alert {
+                padding: 10px 12px;
+                font-size: 0.85rem;
+                border-radius: 8px;
+                margin-bottom: 8px;
+            }
+            
+            .flash-alert .btn-close {
+                padding: 6px;
+                min-width: 20px;
+                min-height: 20px;
+            }
+            
+            .flash-alert i {
+                font-size: 0.9rem;
+            }
+        }
+        
+        /* Extra small mobile */
+        @media (max-width: 359px) {
+            .flash-messages-container {
+                padding: 6px 8px 0;
+            }
+            
+            .flash-alert {
+                padding: 8px 10px;
+                font-size: 0.8rem;
+                border-radius: 6px;
+                margin-bottom: 6px;
+            }
+        }
+        
+        /* Mobile-specific fixes */
+        @media (max-width: 768px) {
+            html {
+                font-size: 14px;
+            }
+            
+            body {
+                padding-right: 0;
+                padding-left: 0;
+            }
+            
+            .container {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+            
+            /* Navbar adjustments */
+            .navbar .container {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+            
+            /* Footer adjustments */
+            footer .container {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+            
+            footer .text-end {
+                text-align: left !important;
+                margin-top: 1rem;
+            }
+        }
+        
+        /* Extra small mobile */
+        @media (max-width: 359px) {
+            .container {
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+        }
+    </style>
+    
+    <!-- Navbar styling (moved from <body> so markup stays valid) -->
+    <style>
+        /* Modern navbar styling */
+        .navbar {
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.25rem;
+            letter-spacing: 0.5px;
+        }
+
+        /* Navigation links - modern bold style */
+        .navbar-nav .nav-link {
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: 0.3px;
+            padding: 0.5rem 0.85rem !important;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            margin: 0 2px;
+            color: #ffffff !important;
+        }
+
+        .navbar-nav .nav-link:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: #ffffff !important;
+        }
+
+        .navbar-nav .nav-link i {
+            margin-right: 5px;
+            font-size: 0.85rem;
+        }
+
+        /* Active nav link - highlighted current page */
+        .navbar-nav .nav-link.active {
+            background-color: rgba(255, 255, 255, 0.25) !important;
+            font-weight: 700;
+            color: #ffffff !important;
+        }
+
+        /* User menu outside container - positioned to appear over page content */
+        .navbar-user-menu {
+            position: absolute;
+            right: 1rem;
+            top: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            z-index: 1030;
+        }
+
+        .navbar-user-menu .nav-link,
+        .navbar-user-menu .dropdown-toggle {
+            color: rgba(255, 255, 255, 0.9) !important;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            background: none;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .navbar-user-menu .nav-link:hover,
+        .navbar-user-menu .dropdown-toggle:hover {
+            color: #fff !important;
+            background-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .navbar-user-menu .dropdown-toggle::after {
+            display: inline-block;
+            margin-left: 0.255em;
+            vertical-align: 0.255em;
+            content: "";
+            border-top: 0.3em solid;
+            border-right: 0.3em solid transparent;
+            border-left: 0.3em solid transparent;
+        }
+
+        /* Dropdown menu - appears OVER the navbar and page content */
+        .navbar-user-menu .dropdown-menu {
+            position: fixed;
+            top: auto;
+            right: 0.5rem;
+            bottom: auto;
+            transform: translateY(10px);
+            min-width: 180px;
+            padding: 0.5rem 0;
+            margin: 0.5rem 0 0;
+            background-color: #ffffff;
+            border-radius: 0.375rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            z-index: 1050;
+        }
+
+        .navbar-user-menu .dropdown-item {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 0.625rem 1rem;
+            clear: both;
+            font-weight: 400;
+            color: #212529;
+            text-align: left;
+            text-decoration: none;
+            white-space: nowrap;
+            background-color: transparent;
+            border: 0;
+            font-size: 0.95rem;
+        }
+
+        .navbar-user-menu .dropdown-item:hover {
+            background-color: #f0f0f0;
+            color: #000;
+        }
+
+        .navbar-user-menu .dropdown-item i {
+            width: 20px;
+            margin-right: 8px;
+        }
+
+        /* Navbar container adjustments */
+        .navbar > .container-fluid {
+            position: relative;
+        }
+
+        /* Navbar toggler styling */
+        .navbar-toggler {
+            border: none;
+            padding: 0.5rem;
+        }
+
+        .navbar-toggler:focus {
+            box-shadow: none;
+        }
+
+        /* Desktop User Menu - Outside navbar */
+        .desktop-user-menu {
+            position: absolute;
+            right: 2.5rem;
+            top: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            z-index: 1030;
+        }
+
+        .desktop-user-menu .dropdown-toggle {
+            color: rgba(255, 255, 255, 0.9) !important;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            background: none;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .desktop-user-menu .dropdown-toggle:hover {
+            color: #fff !important;
+            background-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .desktop-user-menu .dropdown-toggle::after {
+            display: inline-block;
+            margin-left: 0.255em;
+            vertical-align: 0.255em;
+            content: "";
+            border-top: 0.3em solid;
+            border-right: 0.3em solid transparent;
+            border-left: 0.3em solid transparent;
+        }
+
+        .desktop-user-menu .dropdown-menu {
+            position: fixed;
+            top: auto;
+            right: 2rem;
+            bottom: auto;
+            transform: translateY(10px);
+            min-width: 180px;
+            padding: 0.5rem 0;
+            margin: 0.5rem 0 0;
+            background-color: #ffffff;
+            border-radius: 0.375rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            z-index: 1050;
+        }
+
+        .desktop-user-menu .dropdown-item {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 0.625rem 1rem;
+            clear: both;
+            font-weight: 400;
+            color: #212529;
+            text-align: left;
+            text-decoration: none;
+            white-space: nowrap;
+            background-color: transparent;
+            border: 0;
+            font-size: 0.95rem;
+        }
+
+        .desktop-user-menu .dropdown-item:hover {
+            background-color: #f0f0f0;
+            color: #000;
+        }
+
+        .desktop-user-menu .dropdown-item i {
+            width: 20px;
+            margin-right: 8px;
+        }
+
+        /* Mobile adjustments */
+        @media (max-width: 991px) {
+            .navbar-nav .nav-link {
+                padding: 0.75rem 1rem !important;
+                margin: 2px 0;
+            }
+
+            .navbar-user-menu {
+                position: static;
+                margin-left: auto;
+                padding-right: 3.5rem;
+            }
+
+            .navbar-user-menu .dropdown-menu {
+                position: absolute;
+                transform: none;
+                background-color: #0d6efd;
+                box-shadow: none;
+                border: none;
+                right: 0;
+                min-width: 200px;
+            }
+
+            .navbar-user-menu .dropdown-item {
+                color: rgba(255, 255, 255, 0.95);
+            }
+
+            .navbar-user-menu .dropdown-item:hover {
+                background-color: rgba(255, 255, 255, 0.2);
+                color: #fff;
+            }
+
+            /* Hide desktop user menu on mobile */
+            .desktop-user-menu {
+                display: none !important;
+            }
+        }
+    </style>
+
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand">
+                <i class="fas fa-shield-alt"></i> SpamProtection
+            </span>
+            
+            {% if request.endpoint not in ['index', 'login'] %}
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            {% endif %}
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.endpoint == 'dashboard' else '' }}" href="{{ url_for('dashboard') }}">
+                            <i class="fas fa-tachometer-alt"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.endpoint == 'analytics' else '' }}" href="{{ url_for('analytics') }}">
+                            <i class="fas fa-chart-bar"></i> Analytics
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.endpoint == 'threat_console' else '' }}" href="{{ url_for('threat_console') }}">
+                            <i class="fas fa-shield-virus"></i> Threat Console
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {{ 'active' if request.endpoint == 'last_scan_page' else '' }}" href="{{ url_for('last_scan_page') }}">
+                            <i class="fas fa-history"></i> Last Scan Result
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+                
+                <!-- User Menu - Inside navbar-collapse for mobile only -->
+                <ul class="navbar-nav d-lg-none">
+                    {% if current_user.is_authenticated %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <img src="{{ current_user.picture or url_for('static', filename='img/logo.png') }}" referrerpolicy="no-referrer" onerror="this.src='{{ url_for('static', filename='img/logo.png') }}'" alt="Profile" class="rounded-circle me-1" width="24" height="24" style="object-fit: cover;">
+                            {{ current_user.name }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+                            <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                                <i class="fas fa-sign-out-alt me-2"></i> Logout
+                            </a></li>
+                        </ul>
+                    </li>
+                    {% elif request.endpoint not in ['index', 'login'] %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('login') }}">
+                            <i class="fas fa-sign-in-alt"></i> Login
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+        
+        <!-- Desktop User Menu - Outside navbar, only visible on desktop -->
+        {% if current_user.is_authenticated %}
+        <div class="desktop-user-menu d-none d-lg-flex">
+            <div class="dropdown">
+                <button class="btn btn-link nav-link dropdown-toggle" type="button" id="desktopUserMenu" data-bs-toggle="dropdown" aria-expanded="false">
+                    <img src="{{ current_user.picture or url_for('static', filename='img/logo.png') }}" referrerpolicy="no-referrer" onerror="this.src='{{ url_for('static', filename='img/logo.png') }}'" alt="Profile" class="rounded-circle me-1" width="24" height="24" style="object-fit: cover;">
+                                    {{ current_user.name }}
+                                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="desktopUserMenu">
+                    <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                        <i class="fas fa-sign-out-alt me-2"></i> Logout
+                    </a></li>
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+    </nav>
+
+    <!-- Flash Messages - Responsive for all devices -->
+    <div class="flash-messages-container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="flash-alert alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                    <i class="fas fa-{{ 'exclamation-triangle' if category == 'error' or category == 'warning' else 'skull-crossbones' if category == 'danger' else 'check-circle' if category == 'success' else 'info-circle' }} me-2"></i>
+                    <span class="flash-message-text">{{ message }}</span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+    </div>
+
+    <!-- Main Content -->
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-primary text-white py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><i class="fas fa-shield-alt"></i> SpamProtection</h5>
+                    <p class="mb-0">Advanced AI-powered email spam detection and protection.</p>
+                </div>
+                <div class="col-md-6 text-md-end text-start">
+                    <p class="mb-0">© 2026 SpamProtection. Built with Flask & ML.</p>
+                    <small class="text-white-50">Protecting your inbox with artificial intelligence.</small>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    
+    <!-- Flash Messages Auto-Dismiss -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Auto-dismiss flash messages after 5 seconds
+        const flashAlerts = document.querySelectorAll('.flash-alert');
+        flashAlerts.forEach(function(alert) {
+            setTimeout(function() {
+                // Use Bootstrap's dismiss functionality
+                var bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            }, 5000);
+        });
+
+        // Detect browser timezone and locale, save as cookies (sent with every request)
+        function saveTimezone() {
+            var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            var locale = navigator.language || 'en';
+            var prev = localStorage.getItem('tz');
+            if (prev !== tz) {
+                localStorage.setItem('tz', tz);
+                document.cookie = 'tz=' + encodeURIComponent(tz) + ';path=/;max-age=86400';
+                document.cookie = 'locale=' + encodeURIComponent(locale) + ';path=/;max-age=86400';
+                renderDates();
+            } else {
+                localStorage.setItem('tz', tz);
+                document.cookie = 'tz=' + encodeURIComponent(tz) + ';path=/;max-age=86400';
+                document.cookie = 'locale=' + encodeURIComponent(locale) + ';path=/;max-age=86400';
+            }
+        }
+        saveTimezone();
+
+        // Client-side date rendering: formats UTC timestamps in user's locale/timezone
+        function renderDates() {
+            document.querySelectorAll('.utc-date').forEach(function(el) {
+                var utc = el.getAttribute('data-utc');
+                if (utc) {
+                    var d = new Date(utc);
+                    el.textContent = d.toLocaleString(navigator.language, {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                        hour: '2-digit', minute: '2-digit'
+                    }) || el.textContent;
+                }
+            });
+        }
+        renderDates();
+        // Re-detect when user returns to the tab (e.g. after changing system timezone)
+        window.addEventListener('focus', saveTimezone);
+    });
+    </script>
+    
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

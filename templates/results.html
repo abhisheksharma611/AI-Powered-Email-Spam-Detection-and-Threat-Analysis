@@ -1,0 +1,2784 @@
+{% extends "base.html" %}
+
+{% block title %}Analysis Results - SpamProtection{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Results Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="results-header-card card bg-gradient-primary text-white" style="margin-top: 10px;">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h2 class="mb-1">
+                                <i class="fas fa-chart-bar"></i> {{ page_title if page_title else 'Email Analysis Results' }}
+                            </h2>
+                            <p class="mb-0 fw-medium" style="color: rgba(255,255,255,0.9);">
+                                Analysis completed on <span class="utc-date" data-utc="{{ summary.analysis_date_utc }}">{{ summary.analysis_date if summary else 'N/A' }}</span>
+                                {% if summary and summary.processing_time %}
+                                • Processed in {{ summary.processing_time }} seconds
+                                {% endif %}
+                            </p>
+                        </div>
+                        {% if not is_last_scan %}
+                        <div>
+                            <button type="button" class="btn btn-light" id="refreshAnalysisBtn" onclick="refreshAsyncAnalysis()">
+                                <i class="fas fa-refresh"></i> Scan Again
+                            </button>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if summary %}
+    {% set stat_cards = [
+        {'border': 'primary', 'icon': 'fa-envelope', 'color': 'primary', 'value': summary.total_emails, 'label': 'Total Emails', 'sub': 'Analyzed'},
+        {'border': 'success', 'icon': 'fa-check-circle', 'color': 'success', 'value': summary.legitimate_emails, 'label': '✅ Not Spam', 'sub': 'Safe emails'},
+        {'border': 'danger', 'icon': 'fa-skull-crossbones', 'color': 'danger', 'value': summary.spam_emails, 'label': '🚨 Threats', 'sub': 'Spam detected'},
+        {'border': 'info', 'icon': 'fa-percentage', 'color': 'info', 'value': ("%.1f"|format(summary.spam_percentage)) + '%', 'label': 'Threat Rate', 'sub': 'Risk percentage'},
+        {'border': 'warning', 'icon': 'fa-bolt', 'color': 'warning', 'value': summary.high_urgency_emails|default(0), 'label': '🔥 High Urgency', 'sub': 'Requires immediate attention'}
+    ] %}
+    <!-- Enhanced Summary Statistics -->
+    <div class="row mb-4">
+        {% for card in stat_cards %}
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="stat-card card text-center border-{{ card.border }}">
+                <div class="card-body">
+                    <div class="stat-icon text-{{ card.color }} mb-2">
+                        <i class="fas {{ card.icon }} fa-2x"></i>
+                    </div>
+                    <h3 class="h2 text-{{ card.color }}">{{ card.value }}</h3>
+                    <p class="mb-0">{{ card.label }}</p>
+                    <small class="text-active">{{ card.sub }}</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Category Distribution - Simple List Style (like Recent Activity) -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-gradient-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-pie"></i> Category Distribution
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="category-list">
+                        {% for category, count in summary.categories.items()|sort(attribute='1', reverse=true) %}
+                        {% if count > 0 %}
+                        {% set info = {
+                            'legitimate': {'emoji': '✅', 'icon': 'check-circle', 'name': 'Not Spam', 'color': 'success'},
+                            'promotion': {'emoji': '📢', 'icon': 'bullhorn', 'name': 'Promotion', 'color': 'warning'},
+                            'phishing': {'emoji': '🎣', 'icon': 'skull-crossbones', 'name': 'Phishing', 'color': 'phishing'},
+                            'malware': {'emoji': '🦠', 'icon': 'virus', 'name': 'Malware', 'color': 'purple'},
+                            'newsletter': {'emoji': '📰', 'icon': 'newspaper', 'name': 'Newsletter', 'color': 'newsletter'},
+                            'spam': {'emoji': '🚨', 'icon': 'exclamation-triangle', 'name': 'Spam', 'color': 'danger'}
+                        } %}
+                        {% set cat_info = info.get(category, info['legitimate']) %}
+                        <div class="category-list-item">
+                            <span class="category-list-name"><i class="fas fa-{{ cat_info.icon }} me-1{% if cat_info.color not in ['purple', 'phishing', 'newsletter'] %} text-{{ cat_info.color }}{% endif %}"{% if cat_info.color == 'phishing' %} style="color: var(--color-phishing);"{% elif cat_info.color == 'purple' %} style="color: var(--color-malware);"{% elif cat_info.color == 'newsletter' %} style="color: var(--color-newsletter);"{% endif %}></i>{{ cat_info.name }}</span>
+                            <span class="category-list-count fw-semibold">- {{ count }} -</span>
+                            <span class="badge bg-{{ cat_info.color }}{{ ' text-dark' if cat_info.color == 'warning' else '' }}">{{ cat_info.name }}</span>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Enhanced Email Results Table -->
+    {% if results %}
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center bg-primary text-white">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fas fa-list"></i> Email Analysis Details
+                        {% if current_category and current_category != 'all' %}
+                        <span class="badge bg-{{ current_category }} ms-2">
+                            Filter: {{ current_category }}
+                        </span>
+                        {% endif %}
+                    </h5>
+                    <div class="d-flex align-items-center gap-2 filter-controls">
+                        <!-- Category Filter Dropdown -->
+                        <div class="dropdown category-filter-dropdown d-inline-block">
+                            <button class="form-select form-select-sm text-start" type="button" data-bs-toggle="dropdown" id="categoryFilterBtn" style="cursor: pointer; text-align: left !important;">
+                                <i class="fas fa-tag me-1"></i> <span id="categoryFilterLabel">All Categories</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" onclick="selectCategory('all', 'fa-tag', 'All Categories'); return false;"><i class="fas fa-tag me-2"></i> All Categories</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="selectCategory('spam', 'fa-exclamation-triangle', 'Spam'); return false;"><i class="fas fa-exclamation-triangle me-2" style="color: var(--color-spam);"></i> Spam</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="selectCategory('phishing', 'fa-skull-crossbones', 'Phishing'); return false;"><i class="fas fa-skull-crossbones me-2" style="color: var(--color-phishing);"></i> Phishing</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="selectCategory('malware', 'fa-virus', 'Malware'); return false;"><i class="fas fa-virus me-2" style="color: var(--color-malware);"></i> Malware</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="selectCategory('promotion', 'fa-bullhorn', 'Promotion'); return false;"><i class="fas fa-bullhorn me-2" style="color: var(--color-promotion);"></i> Promotion</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="selectCategory('newsletter', 'fa-newspaper', 'Newsletter'); return false;"><i class="fas fa-newspaper me-2" style="color: var(--color-newsletter);"></i> Newsletter</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="selectCategory('legitimate', 'fa-check-circle', 'Not Spam'); return false;"><i class="fas fa-check-circle me-2" style="color: var(--color-legitimate);"></i> Not Spam</a></li>
+                            </ul>
+                        </div>
+                        
+                        <!-- Sort Dropdown -->
+                        <div class="dropdown sort-filter-dropdown d-inline-block">
+                            <button class="form-select form-select-sm text-start" type="button" data-bs-toggle="dropdown" id="sortFilterBtn" style="cursor: pointer; text-align: left !important;">
+                                <i class="fas fa-calendar me-1"></i> <span id="sortFilterLabel">Newest First</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" onclick="selectSort('date', 'fa-calendar', 'Newest First'); return false;"><i class="fas fa-calendar me-2"></i> Newest First</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="selectSort('urgency', 'fa-fire', 'Urgency (High)'); return false;"><i class="fas fa-fire me-2 text-danger"></i> Urgency (High)</a></li>
+                            </ul>
+                        </div>
+                        
+                        <!-- Legacy Threat/Safe Filter (client-side) -->
+                        <div class="btn-group btn-group-sm filter-buttons">
+                            <button class="btn btn-light active text-dark fw-bold" onclick="filterEmails('all', event)">All</button>
+                            <button class="btn btn-light text-danger fw-bold" onclick="filterEmails('threat', event)">Threats</button>
+                            <button class="btn btn-light text-success fw-bold" onclick="filterEmails('safe', event)">Safe</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <!-- Mobile Card Grid View (shown on mobile) -->
+                    <div class="email-card-grid d-md-none">
+                        {% for email in results %}
+                        <a href="{{ url_for('view_email', email_id=email.id) }}" class="text-decoration-none">
+                        <div class="email-card" data-type="{{ 'threat' if email.is_spam else 'safe' }}" data-category="{{ email.category }}" data-urgency="{{ email.urgency_score|default(0) }}" data-date="{{ email.sortable_date }}">
+                            <!-- Row 1: Subject -->
+                            <div class="email-card-subject-row">
+                                <small class="text-active label-inline">📧 Email Subject:</small>
+                                <span class="email-card-subject-text text-primary">{{ email.subject[:100] }}{% if email.subject|length > 100 %}...{% endif %}</span>
+                            </div>
+                            <!-- Row 2: Email Snippet/Preview -->
+                            {% if email.snippet %}
+                            <div class="email-card-snippet">
+                                <small class="text-active label-inline">📝 Body:</small>
+                                {{ email.snippet[:150] }}{% if email.snippet|length > 150 %}...{% endif %}
+                            </div>
+                            {% endif %}
+                            <!-- Row 3: Sender + Date -->
+                            <div class="email-card-sender-row">
+                                <div>
+                                    <small class="text-active label-inline">👤 Sender:</small>
+                                    <span class="email-card-sender" title="{{ email.sender }}">{{ email.sender }}</span>
+                                </div>
+                                <div class="text-end">
+                                    <small class="text-active label-inline">📅 Date:</small>
+                                    <span class="email-card-date utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</span>
+                                </div>
+                            </div>
+                            <!-- Row 4: Badges -->
+                            <div class="email-card-badges">
+                                <small class="text-active label-inline">🏷️ Category:</small>
+                                {% set display_name = {
+                                    'legitimate': 'Not Spam',
+                                    'promotion': 'Promotion',
+                                    'phishing': 'Phishing',
+                                    'malware': 'Malware',
+                                    'newsletter': 'Newsletter',
+                                    'spam': 'Spam'
+                                } %}
+                                {% set category_colors = {
+                                    'legitimate': 'success',
+                                    'promotion': 'warning',
+                                    'phishing': 'phishing',
+                                    'malware': 'purple',
+                                    'newsletter': 'newsletter',
+                                    'spam': 'danger'
+                                } %}
+                                {% set risk_colors = {
+                                    'High': 'danger',
+                                    'Medium': 'warning',
+                                    'Low': 'success'
+                                } %}
+                                {% set risk_emojis = {
+                                    'High': '🔴',
+                                    'Medium': '⚠️',
+                                    'Low': '🟢'
+                                } %}
+                                {% set urgency_colors = {
+                                    'High': 'danger',
+                                    'Medium': 'warning text-dark',
+                                    'Low': 'success'
+                                } %}
+                                {% set urgency_emojis = {
+                                    'High': '🔥',
+                                    'Medium': '⚡',
+                                    'Low': '📩'
+                                } %}
+                                <span class="badge bg-{{ category_colors.get(email.category, 'secondary') }} badge-sm{{ ' text-dark' if email.category == 'promotion' else '' }}">{{ display_name.get(email.category, email.category.title()[:4]) }}</span>
+                                <small class="text-active label-inline ms-2">⚠️ Risk:</small>
+                                <span class="badge bg-{{ risk_colors.get(email.risk_level, 'secondary') }} badge-sm{{ ' text-dark' if email.risk_level == 'Medium' else '' }}">{{ risk_emojis.get(email.risk_level, '') }} {{ (email.risk_level or '')[:6] }}</span>
+                                <small class="text-active label-inline">🔥 Urgency:</small>
+                                <span class="badge bg-{{ urgency_colors.get(email.urgency_level, 'secondary') }} badge-sm">{{ urgency_emojis.get(email.urgency_level, '📧') }} {{ (email.urgency_level or 'Low')[:6] }}</span>
+                            </div>
+                            <!-- Row 5: Confidence -->
+                            <div class="email-card-confidence">
+                                <div class="confidence-label-row">
+                                    <small class="text-active">✅ Confidence:</small>
+                                    <span class="confidence-text fw-bold">{{ "%.0f"|format(email.confidence) }}%
+                                    {% if email.confidence >= 80 %}
+                                        <i class="fas fa-check-circle text-success"></i>
+                                    {% elif email.confidence >= 50 %}
+                                        <i class="fas fa-exclamation-circle text-warning"></i>
+                                    {% else %}
+                                        <i class="fas fa-question-circle text-danger"></i>
+                                    {% endif %}
+                                    </span>
+                                </div>
+                                <div class="progress confidence-progress">
+                                    <div class="progress-bar 
+                                        {% if email.confidence > 80 %}bg-success
+                                        {% elif email.confidence > 60 %}bg-warning
+                                        {% else %}bg-danger{% endif %}" 
+                                        style="width: {{ email.confidence }}%">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    <!-- Desktop Table View (shown on desktop) -->
+                    <div class="table-responsive d-none d-md-block">
+                        <table class="table table-hover mb-0 table-fixed">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th style="width: 25%">Subject</th>
+                                    <th style="width: 20%">Sender</th>
+                                    <th style="width: 10%">Date</th>
+                                    <th style="width: 12%">Category</th>
+                                    <th style="width: 10%">Risk Score</th>
+                                    <th style="width: 8%">Urgency</th>
+                                    <th style="width: 8%">Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody id="emailResults">
+                                {% for email in results %}
+                                <tr class="email-row align-middle" data-type="{{ 'threat' if email.is_spam else 'safe' }}" data-category="{{ email.category }}" data-urgency="{{ email.urgency_score|default(0) }}" data-date="{{ email.sortable_date }}">
+                            <td data-label="Subject">
+                                <div class="email-subject-cell">
+                                    <div class="d-flex align-items-start">
+                                        <div class="category-emoji me-2 fs-5">
+                                            {% if email.category == 'legitimate' %}
+                                                <i class="fas fa-check-circle category-legitimate"></i>
+                                            {% elif email.category == 'promotion' %}
+                                                <i class="fas fa-bullhorn category-promotion"></i>
+                                            {% elif email.category == 'phishing' %}
+                                                <i class="fas fa-skull-crossbones category-phishing"></i>
+                                            {% elif email.category == 'malware' %}
+                                                <i class="fas fa-virus category-malware"></i>
+                                            {% elif email.category == 'newsletter' %}
+                                                <i class="fas fa-newspaper category-newsletter"></i>
+                                            {% elif email.category == 'spam' %}
+                                                <i class="fas fa-exclamation-triangle category-spam"></i>
+                                            {% else %}
+                                                <i class="fas fa-tag text-secondary"></i>
+                                            {% endif %}
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <a href="{{ url_for('view_email', email_id=email.id) }}" class="text-decoration-none email-subject-link" data-email-id="{{ email.id }}">
+                                                <strong class="d-block text-truncate text-primary" title="{{ email.subject }}">
+                                                    {{ email.subject[:30] }}{% if email.subject|length > 30 %}...{% endif %}
+                                                </strong>
+                                            </a>
+                                            {% if email.snippet %}
+                                            <small class="text-active d-block mt-1 text-truncate">
+                                                {{ email.snippet[:30] }}{% if email.snippet|length > 30 %}...{% endif %}
+                                            </small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                                    <td data-label="Sender">
+                                        <div class="cell-align">
+                                            <span class="d-inline-block text-truncate" style="max-width: 220px;" title="{{ email.sender }}">
+                                                {{ email.sender }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td data-label="Date">
+                                        <div class="cell-align">
+                                            <small class="text-active utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</small>
+                                        </div>
+                                    </td>
+                                    <td data-label="Category">
+                                        <div class="cell-align">
+                                            {% set display_name = {
+                                                'legitimate': 'Not Spam',
+                                                'promotion': 'Promotion',
+                                                'phishing': 'Phishing',
+                                                'malware': 'Malware',
+                                                'newsletter': 'Newsletter',
+                                                'spam': 'Spam'
+                                            } %}
+                                            {% set category_colors = {
+                                                'legitimate': 'success',
+                                                'promotion': 'warning',
+                                                'phishing': 'phishing',
+                                                'malware': 'purple',
+                                                'newsletter': 'newsletter',
+                                                'spam': 'danger'
+                                            } %}
+                                             {% set category_icons = {
+                                                 'legitimate': 'check-circle',
+                                                 'promotion': 'bullhorn',
+                                                 'phishing': 'skull-crossbones',
+                                                 'malware': 'virus',
+                                                 'newsletter': 'newspaper',
+                                                 'spam': 'exclamation-triangle'
+                                             } %}
+                                              <span class="badge bg-{{ category_colors.get(email.category, 'secondary') }} d-flex align-items-center justify-content-center{{ ' text-dark' if email.category == 'promotion' else '' }}">
+                                                 <i class="fas fa-{{ category_icons.get(email.category, 'tag') }} me-1"></i> {{ display_name.get(email.category, email.category.title()) }}
+                                             </span>
+                                        </div>
+                                    </td>
+                                    <td data-label="Risk">
+                                        <div class="cell-align">
+                                            {% set risk_colors = {
+                                                'High': 'danger',
+                                                'Medium': 'warning',
+                                                'Low': 'success'
+                                            } %}
+                                            {% set risk_icons = {
+                                                'High': 'exclamation-triangle',
+                                                'Medium': 'exclamation-circle',
+                                                'Low': 'check-circle'
+                                            } %}
+                                            {% set risk_emojis = {
+                                                'High': '🔴',
+                                                'Medium': '⚠️',
+                                                'Low': '🟢'
+                                            } %}
+                                            <span class="badge bg-{{ risk_colors.get(email.risk_level, 'secondary') }} d-flex align-items-center justify-content-center{{ ' text-dark' if email.risk_level == 'Medium' else '' }}">
+                                                <span class="me-1">{{ risk_emojis.get(email.risk_level, '❓') }}</span>
+                                                {{ email.risk_level }}
+                                            </span>
+                                            <small class="text-active d-block mt-1 text-center">{{ email.risk_score }}/100</small>
+                                        </div>
+                                    </td>
+                                    <td data-label="Urgency">
+                                        <div class="cell-align">
+                                            {% set urgency_colors = {
+                                                'High': 'danger',
+                                                'Medium': 'warning text-dark',
+                                                'Low': 'success'
+                                            } %}
+                                            {% set urgency_emojis = {
+                                                'High': '🔥',
+                                                'Medium': '⚡',
+                                                'Low': '📩'
+                                            } %}
+                                            <span class="badge bg-{{ urgency_colors.get(email.urgency_level, 'secondary') }} d-flex align-items-center justify-content-center">
+                                                <span class="me-1">{{ urgency_emojis.get(email.urgency_level, '📧') }}</span>
+                                                {{ email.urgency_level|default('Low') }}
+                                            </span>
+                                            <small class="text-active d-block mt-1 text-center">{{ email.urgency_score|default(0) }}/100</small>
+                                        </div>
+                                    </td>
+                                    <td data-label="Confidence">
+                                        <div class="cell-align confidence-cell">
+                                            <div class="confidence-content">
+                                                <small class="fw-bold">{{ "%.0f"|format(email.confidence) }}%</small>
+                                                {% if email.confidence > 80 %}
+                                                    <i class="fas fa-check-circle text-success"></i>
+                                                {% elif email.confidence > 60 %}
+                                                    <i class="fas fa-exclamation-circle text-warning"></i>
+                                                {% else %}
+                                                    <i class="fas fa-question-circle text-danger"></i>
+                                                {% endif %}
+                                            </div>
+                                            <div class="progress progress-sm">
+                                                <div class="progress-bar progress-bar-striped 
+                                                    {% if email.confidence >= 80 %}bg-success
+                                                    {% elif email.confidence >= 50 %}bg-warning
+                                                    {% else %}bg-danger{% endif %}"
+                                                    style="width: {{ email.confidence }}%" 
+                                                    role="progressbar">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer" style="background-color: #e9ecef;">
+                    <div class="row text-center">
+                        <div class="col-md-2">
+                            <small class="text-success">
+                                <i class="fas fa-check-circle"></i>
+                                <strong>Not Spam:</strong> {{ summary.categories.legitimate }}
+                            </small>
+                        </div>
+                        <div class="col-md-2">
+                            <small class="text-orange">
+                                <i class="fas fa-bullhorn"></i>
+                                <strong>Promotion:</strong> {{ summary.categories.promotion }}
+                            </small>
+                        </div>
+                        <div class="col-md-2">
+                            <small class="text-dark-red">
+                                <i class="fas fa-skull-crossbones"></i>
+                                <strong>Phishing:</strong> {{ summary.categories.phishing }}
+                            </small>
+                        </div>
+                        <div class="col-md-2">
+                            <small class="text-purple">
+                                <i class="fas fa-virus"></i>
+                                <strong>Malware:</strong> {{ summary.categories.malware }}
+                            </small>
+                        </div>
+                        <div class="col-md-2">
+                            <small class="category-newsletter">
+                                <i class="fas fa-newspaper"></i>
+                                <strong>Newsletter:</strong> {{ summary.categories.newsletter }}
+                            </small>
+                        </div>
+                        <div class="col-md-2">
+                            <small class="text-danger">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <strong>Spam:</strong> {{ summary.categories.spam }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Pagination Controls -->
+            {% if total_pages and total_pages > 1 %}
+            <div class="card mt-3">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-active">
+                            Showing {{ ((page - 1) * 20) + 1 }}-{{ [page * 20, total_emails]|min }} of {{ total_emails }} emails
+                        </small>
+                        <nav aria-label="Results pagination">
+                            <ul class="pagination pagination-sm mb-0">
+                                {% if has_prev %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('results_page', page=page-1, category=current_category, sort=current_sort) }}">
+                                        <i class="fas fa-chevron-left"></i> Previous
+                                    </a>
+                                </li>
+                                {% endif %}
+                                
+                                {% for p in range(1, total_pages + 1) %}
+                                    {% if p == page %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ p }}</span>
+                                    </li>
+                                    {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="{{ url_for('results_page', page=p, category=current_category, sort=current_sort) }}">{{ p }}</a>
+                                    </li>
+                                    {% elif p == page - 3 or p == page + 3 %}
+                                    <li class="page-item disabled">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('results_page', page=page+1, category=current_category, sort=current_sort) }}">
+                                        Next <i class="fas fa-chevron-right"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- No Results -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-inbox fa-3x text-secondary mb-3"></i>
+                    <h4>No Analysis Results</h4>
+                    <p class="text-secondary">
+                        No emails were found to analyze. Make sure your Gmail account has emails 
+                        and try running the analysis again.
+                    </p>
+                    <a href="{{ url_for('analyze_emails') }}" class="btn btn-primary">
+                        <i class="fas fa-play"></i> Run Analysis
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+/* Custom color classes for category badges */
+.bg-purple {
+    background-color: #6f42c1 !important;
+}
+
+.bg-orange {
+    background-color: var(--color-promotion) !important;
+}
+
+/* Mobile card label styles */
+.email-card-label {
+    margin-bottom: 4px;
+    margin-top: 8px;
+}
+
+.email-card-label:first-child {
+    margin-top: 0;
+}
+
+/* Filter dropdowns - compact & responsive */
+.category-filter-dropdown .dropdown-item,
+.sort-filter-dropdown .dropdown-item {
+    padding-top: 2px;
+    padding-bottom: 2px;
+    font-size: 0.85rem;
+}
+.category-filter-dropdown .dropdown-item:hover,
+.sort-filter-dropdown .dropdown-item:hover {
+    background-color: #dee2e6;
+}
+.category-filter-dropdown .dropdown-item.active,
+.sort-filter-dropdown .dropdown-item.active {
+    font-weight: 600;
+    background-color: #0d6efd;
+    color: #fff;
+}
+.category-filter-dropdown .dropdown-menu,
+.sort-filter-dropdown .dropdown-menu {
+    min-width: 100%;
+    width: auto;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+@media (max-width: 576px) {
+    .category-filter-dropdown .dropdown-menu {
+        min-width: 100%;
+        width: max-content;
+    }
+}
+
+.label-inline {
+    margin-right: 4px;
+    white-space: nowrap;
+    vertical-align: middle;
+    display: inline-flex;
+    align-items: center;
+}
+
+.bg-dark-red {
+    background-color: var(--color-phishing) !important;
+}
+
+.bg-phishing {
+    background-color: var(--color-phishing) !important;
+    border: 2px solid var(--color-phishing) !important;
+    color: #ffffff !important;
+}
+.bg-phishing .text-white,
+.bg-phishing .badge,
+.bg-phishing strong,
+.bg-phishing span {
+    color: #ffffff !important;
+}
+
+.text-purple {
+    color: #6f42c1 !important;
+}
+
+.text-orange {
+    color: var(--color-promotion) !important;
+}
+
+.text-dark-red {
+    color: var(--color-phishing) !important;
+}
+
+.border-purple {
+    border-color: var(--color-malware) !important;
+}
+
+.border-orange {
+    border-color: var(--color-promotion) !important;
+}
+
+.border-dark-red {
+    border-color: var(--color-phishing) !important;
+}
+
+.stat-card {
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    height: 100%;
+}
+
+.stat-card .card-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+
+.progress-sm {
+    height: 6px;
+    border-radius: 3px;
+}
+
+.email-subject strong {
+    display: block;
+    line-height: 1.2;
+}
+
+.category-item {
+    background: linear-gradient(135deg, #f1f3f5 0%, #e9ecef 100%);
+    transition: all 0.3s ease;
+    height: 100%;
+}
+
+.category-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+}
+
+.category-icon {
+    opacity: 0.9;
+}
+
+.risk-indicator,
+.confidence-display {
+    min-width: 100px;
+}
+
+.confidence-display .progress {
+    height: 8px;
+}
+
+.table-fixed {
+    table-layout: fixed;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+    color: #ffffff;
+    vertical-align: middle;
+    text-align: center;
+}
+
+.table td {
+    vertical-align: middle;
+    padding: 1rem 0.75rem;
+}
+
+/* Table cell alignment classes */
+.cell-align {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 70px;
+    font-weight: 400;
+}
+
+/* Subject column - left aligned with vertical centering */
+.email-subject-cell {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 70px;
+    width: 100%;
+}
+
+/* Confidence column specific */
+.confidence-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+}
+
+.confidence-cell .progress {
+    width: 100%;
+    min-width: 60px;
+    margin: 0;
+}
+
+.confidence-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    line-height: 1;
+}
+
+/* Ensure consistent badge sizing */
+.cell-align .badge {
+    min-width: 85px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.2;
+}
+
+/* Table row minimum height for consistency */
+.email-row {
+    min-height: 70px;
+}
+
+.email-row:hover {
+    background-color: rgba(0,123,255,0.05);
+    transform: translateX(2px);
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.category-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.category-count .badge {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+}
+
+.emoji-large {
+    font-size: 1.5rem;
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.category-emoji {
+    min-width: 30px;
+}
+
+.progress-bar-striped {
+    background-image: linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent);
+    background-size: 1rem 1rem;
+}
+
+.results-header-card {
+    border: none;
+    border-radius: 12px;
+}
+
+.border-2 {
+    border-width: 2px !important;
+}
+
+/* Dropdown styling - enhanced native selects */
+.card-header .form-select {
+    position: relative;
+    z-index: 10;
+    background-color: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23666' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    background-size: 10px 6px;
+    padding-right: 1.75rem;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+.card-header .form-select:hover {
+    border-color: rgba(0, 0, 0, 0.25);
+    background-color: #fafafa;
+}
+
+.card-header .form-select:focus {
+    z-index: 20;
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.15);
+    background-color: #fff;
+}
+
+.card-header .form-select option {
+    padding: 8px 12px;
+    background-color: #fff;
+    color: #212529;
+}
+
+.card-header .form-select-sm {
+    min-height: 42px;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+    font-size: 0.9rem;
+    padding-left: 1rem;
+    padding-right: 2.25rem;
+}
+
+/* Filter button group - match select height and border */
+.filter-buttons .btn {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.9rem;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    transition: all 0.15s ease;
+}
+
+.filter-buttons .btn:first-child {
+    border-radius: 8px 0 0 8px;
+}
+
+.filter-buttons .btn:last-child {
+    border-radius: 0 8px 8px 0;
+}
+
+.filter-buttons .btn:hover {
+    background-color: #f0f0f0;
+    border-color: rgba(0, 0, 0, 0.25);
+}
+
+.filter-buttons .btn.active {
+    background-color: #e8f0fe;
+    border-color: #86b7fe;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.06);
+}
+
+/* Mobile-friendly filter controls */
+.filter-controls {
+    flex-wrap: wrap;
+}
+
+@media (min-width: 992px) {
+    .filter-controls {
+        width: auto;
+        flex: 1 1 auto;
+        justify-content: flex-end;
+    }
+    .filter-controls .form-select {
+        min-width: 180px;
+    }
+}
+
+@media (max-width: 768px) {
+    .filter-controls {
+        flex-direction: column;
+        width: 100%;
+        gap: 8px !important;
+    }
+    
+    .category-filter-dropdown,
+    .sort-filter-dropdown {
+        width: 100% !important;
+        min-width: 100% !important;
+        max-width: 100% !important;
+    }
+    .category-filter-dropdown .dropdown-menu,
+    .sort-filter-dropdown .dropdown-menu {
+        min-width: 100%;
+        width: 100%;
+    }
+    .category-filter-dropdown .form-select,
+    .sort-filter-dropdown .form-select {
+        width: 100%;
+    }
+    
+    .filter-buttons {
+        width: 100%;
+        display: flex;
+    }
+    
+    .filter-buttons .btn {
+        flex: 1;
+    }
+    
+    /* Remove only emojis from email cards in mobile view */
+    .email-card .category-emoji {
+        display: none !important;
+    }
+    
+    /* Make email cards more compact */
+    .email-card {
+        padding: 4px !important;
+        margin-bottom: 2px !important;
+    }
+
+    .email-card-subject-row,
+    .email-card-snippet,
+    .email-card-sender-row,
+    .email-card-badges,
+    .email-card-confidence {
+        margin-bottom: 1px !important;
+        padding: 1px 0 !important;
+    }
+    
+    /* Make email card labels more bold and prominent */
+    .email-card small.fw-bold {
+        font-weight: 700 !important;
+        color: #212529 !important;
+        font-size: 0.75rem !important;
+    }
+    
+    /* Style the label text to be more prominent */
+    .email-card-subject-row small,
+    .email-card-snippet small,
+    .email-card-sender-row small,
+    .email-card-badges small,
+    .email-card-confidence small {
+        display: block;
+        margin-bottom: 2px;
+        padding: 2px 6px;
+        background-color: #f8f9fa;
+        border-radius: 3px;
+        border-left: 2px solid #007bff;
+        font-weight: 700 !important;
+        font-size: 0.7rem !important;
+    }
+    
+    .email-card-subject-text,
+    .email-card-snippet,
+    .email-card-sender,
+    .email-card-date {
+        font-size: 0.8rem !important;
+        line-height: 1.3 !important;
+    }
+    
+    .email-card .badge {
+        font-size: 0.65rem !important;
+        padding: 2px 4px !important;
+    }
+    
+    .email-card-confidence .progress {
+        height: 4px !important;
+    }
+    
+    .email-card-confidence .confidence-text {
+        font-size: 0.75rem !important;
+    }
+    .table-responsive {
+        font-size: 0.875rem;
+    }
+    
+    .email-subject strong {
+        font-size: 0.9rem;
+    }
+    
+    .category-item {
+        margin-bottom: 1rem;
+    }
+    
+    .emoji-large {
+        font-size: 1.2rem;
+    }
+    
+    /* Results Page Mobile Fixes - Full Screen Fit */
+    .container {
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+    }
+    
+    /* Stats cards - full width on mobile */
+    .stat-card {
+        margin-bottom: 0.75rem;
+    }
+    
+    /* Email card grid - ensure 1 column */
+    .email-card-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5px;
+        padding: 4px;
+    }
+    
+    .email-card {
+        width: 100%;
+        margin: 0;
+    }
+    
+    /* Card header filters - stack properly */
+    .card-header {
+        padding: 0.75rem !important;
+    }
+    
+    .card-header .d-flex {
+        gap: 8px !important;
+    }
+    
+    .card-header .form-select,
+    .card-header .btn-group {
+        width: 100% !important;
+    }
+    
+    /* Summary stats - 2 columns on mobile */
+    .row.mb-4 > .col-lg-3 {
+        flex: 0 0 50%;
+        max-width: 50%;
+    }
+    
+    /* Category distribution - 2 columns */
+    .category-item {
+        flex: 0 0 50%;
+        max-width: 50%;
+    }
+    
+    /* Card footer stats - single column */
+    .card-footer .row > div {
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* Extra small mobile */
+@media (max-width: 359px) {
+    .container {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+    
+    .row.mb-4 > .col-lg-3 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    
+    .category-item {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    
+    h2 {
+        font-size: 1.1rem !important;
+    }
+}
+</style>
+
+<script>
+// Apply server-side filter from dropdown
+function applyFilter(url) {
+    window.location.href = url;
+}
+
+// Apply server-side sort from dropdown
+function applySort(url) {
+    window.location.href = url;
+}
+
+function filterEmails(type, event) {
+    // Filter desktop table rows
+    const rows = document.querySelectorAll('.email-row');
+    rows.forEach(row => {
+        if (type === 'all') {
+            row.style.display = '';
+        } else {
+            const rowType = row.getAttribute('data-type');
+            row.style.display = rowType === type ? '' : 'none';
+        }
+    });
+    
+    // Filter mobile cards
+    const cards = document.querySelectorAll('.email-card');
+    cards.forEach(card => {
+        if (type === 'all') {
+            card.style.display = '';
+        } else {
+            const cardType = card.getAttribute('data-type');
+            card.style.display = cardType === type ? '' : 'none';
+        }
+    });
+    
+    // Update button states
+    document.querySelectorAll('.btn-group .btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
+}
+
+// Client-side category filtering
+function filterByCategory(category) {
+    // Filter desktop table rows
+    const rows = document.querySelectorAll('.email-row');
+    rows.forEach(row => {
+        if (category === 'all') {
+            row.style.display = '';
+        } else {
+            const rowCategory = row.getAttribute('data-category');
+            row.style.display = rowCategory === category ? '' : 'none';
+        }
+    });
+    
+    // Filter mobile cards
+    const cards = document.querySelectorAll('.email-card');
+    cards.forEach(card => {
+        if (category === 'all') {
+            card.style.display = '';
+        } else {
+            const cardCategory = card.getAttribute('data-category');
+            card.style.display = cardCategory === category ? '' : 'none';
+        }
+    });
+    
+    // Update dropdown to show selected value
+    const dropdownBtn = document.getElementById('categoryFilterBtn');
+    if (dropdownBtn) {
+        const icons = {
+            'all': 'fa-tag',
+            'spam': 'fa-exclamation-triangle',
+            'phishing': 'fa-skull-crossbones',
+            'malware': 'fa-virus',
+            'promotion': 'fa-bullhorn',
+            'newsletter': 'fa-newspaper',
+            'legitimate': 'fa-check-circle'
+        };
+        const colorStyles = {
+            'all': '',
+            'spam': 'color: var(--color-spam);',
+            'phishing': 'color: var(--color-phishing);',
+            'malware': 'color: var(--color-malware);',
+            'promotion': 'color: var(--color-promotion);',
+            'newsletter': 'color: var(--color-newsletter);',
+            'legitimate': 'color: var(--color-legitimate);'
+        };
+        const iconClass = icons[category] || 'fa-tag';
+        const label = {
+            'all': 'All Categories',
+            'spam': 'Spam',
+            'phishing': 'Phishing',
+            'malware': 'Malware',
+            'promotion': 'Promotion',
+            'newsletter': 'Newsletter',
+            'legitimate': 'Not Spam'
+        }[category] || 'All Categories';
+        const iconColor = colorStyles[category] || '';
+        dropdownBtn.innerHTML = '<i class="fas ' + iconClass + ' me-1"' + (iconColor ? ' style="' + iconColor + '"' : '') + '></i> <span id="categoryFilterLabel">' + label + '</span>';
+    }
+}
+
+function selectCategory(category, iconClass, label) {
+    filterByCategory(category);
+    const btn = document.getElementById('categoryFilterBtn');
+    if (btn) {
+        const colorStyles = {
+            'all': '',
+            'spam': 'color: var(--color-spam);',
+            'phishing': 'color: var(--color-phishing);',
+            'malware': 'color: var(--color-malware);',
+            'promotion': 'color: var(--color-promotion);',
+            'newsletter': 'color: var(--color-newsletter);',
+            'legitimate': 'color: var(--color-legitimate);'
+        };
+        const iconColor = colorStyles[category] || '';
+        btn.innerHTML = '<i class="fas ' + iconClass + ' me-1"' + (iconColor ? ' style="' + iconColor + '"' : '') + '></i> <span id="categoryFilterLabel">' + label + '</span>';
+    }
+    // Set active state on dropdown item
+    document.querySelectorAll('.category-filter-dropdown .dropdown-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('onclick') && item.getAttribute('onclick').includes("'" + category + "'")) {
+            item.classList.add('active');
+        }
+    });
+}
+
+// Client-side sorting
+function sortBy(sortType) {
+    const tbody = document.getElementById('emailResults');
+    if (!tbody) return;
+    
+    const rows = Array.from(tbody.querySelectorAll('.email-row'));
+    
+    rows.sort((a, b) => {
+        if (sortType === 'urgency') {
+            // Sort by urgency score (higher first)
+            const urgencyA = parseInt(a.getAttribute('data-urgency') || '0');
+            const urgencyB = parseInt(b.getAttribute('data-urgency') || '0');
+            return urgencyB - urgencyA;
+        } else {
+            // Sort by date (newest first)
+            const dateA = a.getAttribute('data-date') || '';
+            const dateB = b.getAttribute('data-date') || '';
+            return dateB.localeCompare(dateA);
+        }
+    });
+    
+    // Re-append rows in sorted order
+    rows.forEach(row => tbody.appendChild(row));
+    
+    // Also sort mobile cards
+    const cardGrid = document.querySelector('.email-card-grid');
+    if (cardGrid) {
+        const cards = Array.from(cardGrid.querySelectorAll('.email-card'));
+        
+        cards.sort((a, b) => {
+            if (sortType === 'urgency') {
+                const urgencyA = parseInt(a.getAttribute('data-urgency') || '0');
+                const urgencyB = parseInt(b.getAttribute('data-urgency') || '0');
+                return urgencyB - urgencyA;
+            } else {
+                const dateA = a.getAttribute('data-date') || '';
+                const dateB = b.getAttribute('data-date') || '';
+                return dateB.localeCompare(dateA);
+            }
+        });
+        
+        cards.forEach(card => cardGrid.appendChild(card));
+    }
+    
+    // Update sort button
+    const sortBtn = document.getElementById('sortFilterBtn');
+    if (sortBtn) {
+        const sortIcons = { 'date': 'fa-calendar', 'urgency': 'fa-fire' };
+        const sortLabels = { 'date': 'Newest First', 'urgency': 'Urgency (High)' };
+        const iconClass = sortIcons[sortType] || 'fa-calendar';
+        const label = sortLabels[sortType] || 'Newest First';
+        sortBtn.innerHTML = '<i class="fas ' + iconClass + ' me-1"></i> <span id="sortFilterLabel">' + label + '</span>';
+    }
+}
+
+function selectSort(sortType, iconClass, label) {
+    sortBy(sortType);
+    const btn = document.getElementById('sortFilterBtn');
+    if (btn) {
+        btn.innerHTML = '<i class="fas ' + iconClass + ' me-1"></i> <span id="sortFilterLabel">' + label + '</span>';
+    }
+    // Set active state on dropdown item
+    document.querySelectorAll('.sort-filter-dropdown .dropdown-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('onclick') && item.getAttribute('onclick').includes("'" + sortType + "'")) {
+            item.classList.add('active');
+        }
+    });
+}
+
+// Auto-refresh functionality and tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize category dropdown with current selection
+    {% if current_category and current_category != 'all' %}
+    const initCat = '{{ current_category }}';
+    const initIconMap = {
+        'spam': 'fa-exclamation-triangle',
+        'phishing': 'fa-skull-crossbones',
+        'malware': 'fa-virus',
+        'promotion': 'fa-bullhorn',
+        'newsletter': 'fa-newspaper',
+        'legitimate': 'fa-check-circle'
+    };
+    const initLabelMap = {
+        'spam': 'Spam',
+        'phishing': 'Phishing',
+        'malware': 'Malware',
+        'promotion': 'Promotion',
+        'newsletter': 'Newsletter',
+        'legitimate': 'Not Spam'
+    };
+    if (initIconMap[initCat]) {
+        selectCategory(initCat, initIconMap[initCat], initLabelMap[initCat]);
+    }
+    {% else %}
+    selectCategory('all', 'fa-tag', 'All Categories');
+    {% endif %}
+    
+    // Initialize sort dropdown with current selection
+    {% if current_sort == 'urgency' %}
+    selectSort('urgency', 'fa-fire', 'Urgency (High)');
+    {% else %}
+    selectSort('date', 'fa-calendar', 'Newest First');
+    {% endif %}
+    
+    // Add tooltips to truncated text
+    const tooltipElements = document.querySelectorAll('[title]');
+    tooltipElements.forEach(element => {
+        if (element.getAttribute('title')) {
+            element.setAttribute('data-bs-toggle', 'tooltip');
+        }
+    });
+    
+    // Initialize Bootstrap tooltips if available
+    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function(tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    }
+    
+    // Add animation to progress bars
+    setTimeout(() => {
+        document.querySelectorAll('.progress-bar').forEach(bar => {
+            bar.style.transition = 'width 1.5s ease-in-out';
+        });
+    }, 100);
+});
+</script>
+
+<!-- Email View Modal -->
+<div class="modal fade" id="emailViewModal" tabindex="-1" aria-labelledby="emailViewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content" style="border-radius: 16px; border: none; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); background-color: #ffffff;">
+            <!-- Modal Header -->
+            <div class="modal-header" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border-radius: 16px 16px 0 0; border: none; padding: 20px 24px;">
+                <div class="w-100">
+                    <h5 class="modal-title text-white fw-bold mb-1" id="emailViewModalLabel" style="font-size: 1.1rem; line-height: 1.4;">
+                        <i class="fas fa-envelope-open-text me-2"></i>
+                        <span id="modalSubject">Loading...</span>
+                    </h5>
+                    <div class="d-flex align-items-center gap-2 mt-2" id="modalBadges">
+                        <!-- Badges will be injected here -->
+                    </div>
+                </div>
+                <button type="button" class="btn-close-modal" data-bs-dismiss="modal" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="modal-body p-0" style="background-color: #ffffff; color: #111827;">
+                <!-- Loading State - Dashboard Style -->
+                <div id="modalLoading" class="text-center py-5">
+                    <div class="loading-container">
+                        <div class="custom-spinner" style="width: 80px; height: 80px; border: 4px solid rgba(14, 165, 233, 0.2); border-top: 4px solid #0ea5e9; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px;">
+                        </div>
+                        <p class="loading-text mb-0" style="font-size: 1rem; color: #374151; font-weight: 600;">Loading email content...</p>
+                    </div>
+                </div>
+                
+                <!-- Error State -->
+                <div id="modalError" class="text-center py-5 d-none">
+                    <i class="fas fa-exclamation-circle text-danger fa-3x mb-3"></i>
+                    <h5 class="text-danger">Failed to load email</h5>
+                    <p class="text-muted" id="modalErrorMessage">An error occurred while loading the email.</p>
+                    <button class="btn btn-outline-primary" onclick="retryLoadEmail()">
+                        <i class="fas fa-redo me-1"></i> Try Again
+                    </button>
+                </div>
+                
+                <!-- Email Content -->
+                <div id="modalContent" class="d-none">
+                    <!-- Meta Info Section -->
+                    <div class="p-4" style="background-color: #ffffff; border-bottom: 1px solid #e5e7eb; color: #111827;">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="fas fa-user text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <small class="text-active d-block">From</small>
+                                        <span class="fw-semibold text-dark" id="modalSender">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="d-flex align-items-start">
+                                    <i class="fas fa-calendar-alt text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <small class="text-active d-block">Date</small>
+                                        <span class="fw-semibold text-dark" id="modalDate">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12" id="modalToRow" style="display: none;">
+                                <div class="d-flex align-items-start">
+                                    <i class="fas fa-at text-primary me-2 mt-1"></i>
+                                    <div>
+                                        <small class="text-active d-block">To</small>
+                                        <span class="fw-semibold text-dark" id="modalTo">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Analysis Section - Creative & Colorful -->
+                    <div class="p-4" id="modalAnalysisSection" style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-bottom: 1px solid #e5e7eb; color: #111827;">
+                        <h6 class="fw-bold mb-3 text-dark"><i class="fas fa-shield-virus me-2"></i>Security Analysis</h6>
+                        <div class="row g-3">
+                            <!-- Category Card -->
+                            <div class="col-6 col-md-3">
+                                <div class="card border-0 shadow-sm h-100" id="categoryCard" style="border-radius: 12px;">
+                                    <div class="card-body text-center p-3">
+                                        <div class="mb-2">
+                                            <i class="fas fa-tag fa-2x" id="categoryIcon"></i>
+                                        </div>
+                                        <small class="d-block fw-bold" style="color: #374151;">Category</small>
+                                        <span class="fw-bold fs-4" id="modalCategory">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Risk Score Card -->
+                            <div class="col-6 col-md-3">
+                                <div class="card border-0 shadow-sm h-100" id="riskScoreCard" style="border-radius: 12px;">
+                                    <div class="card-body text-center p-3">
+                                        <div class="mb-2">
+                                            <i class="fas fa-exclamation-triangle fa-2x" id="riskScoreIcon"></i>
+                                        </div>
+                                        <small class="d-block fw-bold" style="color: #374151;">Risk Score</small>
+                                        <span class="fw-bold fs-4" id="modalRiskScore">-</span>
+                                        <div class="progress mt-2" style="height: 6px; border-radius: 3px;">
+                                            <div class="progress-bar" id="riskScoreBar" role="progressbar" style="width: 0%; border-radius: 3px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Urgency Card -->
+                            <div class="col-6 col-md-3">
+                                <div class="card border-0 shadow-sm h-100" id="urgencyCard" style="border-radius: 12px;">
+                                    <div class="card-body text-center p-3">
+                                        <div class="mb-2">
+                                            <i class="fas fa-bolt fa-2x" id="urgencyIcon"></i>
+                                        </div>
+                                        <small class="d-block fw-bold" style="color: #374151;">Urgency</small>
+                                        <span class="fw-bold fs-4" id="modalUrgency">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Confidence Card -->
+                            <div class="col-6 col-md-3">
+                                <div class="card border-0 shadow-sm h-100" id="confidenceCard" style="border-radius: 12px;">
+                                    <div class="card-body text-center p-3">
+                                        <div class="mb-2">
+                                            <i class="fas fa-chart-line fa-2x" id="confidenceIcon"></i>
+                                        </div>
+                                        <small class="d-block fw-bold" style="color: #374151;">Confidence</small>
+                                        <span class="fw-bold fs-4" id="modalConfidence">-</span>
+                                        <div class="progress mt-2" style="height: 6px; border-radius: 3px;">
+                                            <div class="progress-bar" id="confidenceBar" role="progressbar" style="width: 0%; border-radius: 3px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3" id="modalExplanationRow" style="display: none;">
+                            <div class="alert alert-info mb-0 py-2 px-3 border-0" style="border-radius: 10px; background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);">
+                                <span class="badge me-1" style="font-size: 13px; vertical-align: middle; background-color: #2563EB; color: #fff;">AI</span> <span id="modalExplanation" style="font-size: 14px; color: #1e293b; font-weight: 500; line-height: 1.5;">-</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Email Body Section - No separate scroll, uses modal scroll -->
+                    <div class="p-4">
+                        <h6 class="fw-bold mb-3"><i class="fas fa-file-alt me-2"></i>Email Content</h6>
+                        <div id="modalBodyContainer" style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px;">
+                            <!-- Email body will be injected here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="modal-footer" style="border-top: 1px solid #e5e7eb; padding: 16px 24px;">
+                <button type="button" id="modalViewFullBtn" class="btn btn-outline-primary btn-sm" onclick="openInNewTab()">
+                    <i class="fas fa-external-link-alt me-1"></i> Open in New Tab
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Modal Animations */
+#emailViewModal .modal-dialog {
+    transform: scale(0.9);
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+#emailViewModal.show .modal-dialog {
+    transform: scale(1);
+    opacity: 1;
+}
+
+/* Visible Close Button Styling */
+.btn-close-modal {
+    background: rgba(255, 255, 255, 0.25);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-left: 12px;
+}
+
+.btn-close-modal i {
+    color: #ffffff;
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.btn-close-modal:hover {
+    background: rgba(255, 255, 255, 0.4);
+    border-color: rgba(255, 255, 255, 0.8);
+    transform: scale(1.1);
+}
+
+.btn-close-modal:active {
+    transform: scale(0.95);
+}
+
+/* Mobile adjustments for close button */
+@media (max-width: 768px) {
+    .btn-close-modal {
+        width: 36px;
+        height: 36px;
+        margin-left: 8px;
+    }
+    
+    .btn-close-modal i {
+        font-size: 1rem;
+    }
+}
+
+/* Email body container - fully integrated with modal scroll, no separate scrollbar */
+#modalBodyContainer {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: visible !important;
+    max-height: none !important;
+}
+
+#modalBodyContainer iframe {
+    width: 100%;
+    min-height: 200px;
+    border: none;
+    background: #ffffff;
+    overflow: hidden !important;
+    display: block;
+}
+
+/* CRITICAL: Force iframe internal content to not scroll */
+#modalBodyContainer iframe html,
+#modalBodyContainer iframe body {
+    overflow: hidden !important;
+    height: auto;
+    margin: 0;
+    padding: 0;
+}
+
+#modalBodyContainer pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: inherit;
+    margin: 0;
+    padding: 16px;
+    color: #111827;
+}
+
+/* Badge styling in modal */
+#modalBadges .badge {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+}
+
+/* Hide navbar when modal is open */
+body.modal-open .navbar {
+    display: none !important;
+}
+
+/* Smooth Loading Animation - FIXED */
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    min-height: 200px;
+}
+
+.loading-spinner {
+    position: relative;
+    width: 70px;
+    height: 70px;
+    margin-bottom: 20px;
+}
+
+.spinner-ring {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border: 4px solid #e5e7eb;
+    border-top: 4px solid #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.spinner-ring:nth-child(2) {
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    border: 3px solid #e5e7eb;
+    border-top: 3px solid #10b981;
+    animation: spin 1.2s linear infinite reverse;
+}
+
+.spinner-ring:nth-child(3) {
+    width: 60%;
+    height: 60%;
+    top: 20%;
+    left: 20%;
+    border: 2px solid #e5e7eb;
+    border-top: 2px solid #f59e0b;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.loading-text {
+    font-size: 1rem;
+    color: #374151;
+    font-weight: 600;
+    margin-bottom: 12px;
+    animation: fadeInOut 2s ease-in-out infinite;
+}
+
+.loading-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    border-radius: 50%;
+    animation: pulse 1.4s ease-in-out infinite;
+}
+
+.dot:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.3);
+        opacity: 0.7;
+    }
+}
+
+@keyframes fadeInOut {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
+/* Mobile Responsive Loading Animation - SMOOTH */
+@media (max-width: 768px) {
+    .loading-spinner {
+        width: 55px;
+        height: 55px;
+        margin-bottom: 16px;
+    }
+    
+    .spinner-ring {
+        border-width: 3px;
+        animation-duration: 0.8s;
+    }
+    
+    .spinner-ring:nth-child(2) {
+        width: 75%;
+        height: 75%;
+        top: 12.5%;
+        left: 12.5%;
+        border-width: 2px;
+        animation-duration: 1s;
+    }
+    
+    .spinner-ring:nth-child(3) {
+        width: 55%;
+        height: 55%;
+        top: 22.5%;
+        left: 22.5%;
+        border-width: 2px;
+        animation-duration: 0.6s;
+    }
+    
+    .loading-text {
+        font-size: 0.85rem;
+        margin-bottom: 10px;
+    }
+    
+    .loading-dots {
+        gap: 5px;
+    }
+    
+    .dot {
+        width: 7px;
+        height: 7px;
+        animation-duration: 1.2s;
+    }
+}
+
+/* Modal Analysis Cards - Mobile Responsive */
+@media (max-width: 768px) {
+    /* Make modal header more compact */
+    #emailViewModal .modal-header {
+        padding: 12px 16px !important;
+    }
+    
+    #emailViewModal .modal-title {
+        font-size: 0.95rem !important;
+    }
+    
+    /* Make modal body sections more compact */
+    #emailViewModal .p-4 {
+        padding: 12px !important;
+    }
+    
+    /* Security Analysis section */
+    #modalAnalysisSection h6 {
+        font-size: 0.85rem !important;
+        margin-bottom: 8px !important;
+    }
+    
+    /* Analysis cards - 2x2 grid on mobile */
+    #modalAnalysisSection .row.g-3 > div {
+        padding-left: 4px !important;
+        padding-right: 4px !important;
+    }
+    
+    #modalAnalysisSection .row.g-3 .card {
+        border-radius: 8px !important;
+    }
+    
+    #modalAnalysisSection .row.g-3 .card-body {
+        padding: 8px 4px !important;
+    }
+    
+    #modalAnalysisSection .row.g-3 .fa-2x {
+        font-size: 1.1rem !important;
+    }
+    
+    #modalAnalysisSection .row.g-3 small.fw-bold {
+        font-size: 0.55rem !important;
+    }
+    
+    #modalAnalysisSection .row.g-3 .fs-4 {
+        font-size: 0.8rem !important;
+    }
+    
+    #modalAnalysisSection .row.g-3 .progress {
+        height: 3px !important;
+    }
+    
+    /* Meta info section */
+    #modalContent .row.g-3 .col-md-6 {
+        padding: 4px 8px !important;
+    }
+    
+    #modalContent .row.g-3 small {
+        font-size: 0.65rem !important;
+    }
+    
+    #modalContent .row.g-3 .fw-semibold {
+        font-size: 0.8rem !important;
+    }
+    
+    /* Email content section */
+    #modalContent h6.fw-bold {
+        font-size: 0.85rem !important;
+    }
+    
+    #modalBodyContainer {
+    }
+    
+    /* Modal footer */
+    #emailViewModal .modal-footer {
+        padding: 8px 16px !important;
+    }
+    
+    #emailViewModal .modal-footer .btn {
+        font-size: 0.75rem !important;
+        padding: 4px 8px !important;
+    }
+}
+
+/* Modal Footer Button Styling */
+#emailViewModal .modal-footer .btn-secondary {
+    background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: 600;
+    color: #ffffff;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#emailViewModal .modal-footer .btn-secondary:hover {
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+#emailViewModal .modal-footer .btn-secondary:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#emailViewModal .modal-footer .btn-outline-primary {
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+#emailViewModal .modal-footer .btn-outline-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+@media (max-width: 359px) {
+    .loading-spinner {
+        width: 45px;
+        height: 45px;
+        margin-bottom: 14px;
+    }
+    
+    .spinner-ring {
+        border-width: 2px;
+        animation-duration: 0.7s;
+    }
+    
+    .spinner-ring:nth-child(2) {
+        width: 70%;
+        height: 70%;
+        top: 15%;
+        left: 15%;
+        border-width: 2px;
+        animation-duration: 0.9s;
+    }
+    
+    .spinner-ring:nth-child(3) {
+        width: 50%;
+        height: 50%;
+        top: 25%;
+        left: 25%;
+        border-width: 1px;
+        animation-duration: 0.5s;
+    }
+    
+    .loading-text {
+        font-size: 0.8rem;
+        margin-bottom: 8px;
+    }
+    
+    .loading-dots {
+        gap: 4px;
+    }
+    
+    .dot {
+        width: 6px;
+        height: 6px;
+        animation-duration: 1s;
+    }
+}
+</style>
+
+<script>
+// Email Modal Functions
+let currentEmailId = null;
+let emailModalInstance = null;
+let currentEmailUrl = null;
+
+// Open email in new tab using window.open (sets window.opener)
+function openInNewTab() {
+    if (currentEmailUrl) {
+        window.open(currentEmailUrl, '_blank');
+    }
+}
+
+// Open email in modal
+function openEmailModal(emailId, event) {
+    if (event) {
+        event.preventDefault();
+    }
+    
+    currentEmailId = emailId;
+    
+    // Save current scroll position BEFORE opening modal
+    const scrollY = window.scrollY;
+    document.body.dataset.savedScrollY = scrollY;
+    
+    // Show modal
+    const modalElement = document.getElementById('emailViewModal');
+    emailModalInstance = new bootstrap.Modal(modalElement);
+    
+    // Disable body scroll when modal opens (for all devices)
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    
+    emailModalInstance.show();
+    
+    // Reset states
+    document.getElementById('modalLoading').classList.remove('d-none');
+    document.getElementById('modalError').classList.add('d-none');
+    document.getElementById('modalContent').classList.add('d-none');
+    
+    // Load email content
+    loadEmailContent(emailId);
+}
+
+// Re-enable body scroll when modal closes (NO PAGE REFRESH, INSTANT SCROLL RESTORATION)
+document.addEventListener('DOMContentLoaded', function() {
+    const emailModal = document.getElementById('emailViewModal');
+    if (emailModal) {
+        // Use capture phase to ensure we handle the event first
+        emailModal.addEventListener('hidden.bs.modal', function(e) {
+            // Prevent any default behavior
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Re-enable body scroll (for all devices) - NO PAGE REFRESH
+            document.body.style.overflow = '';
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.left = '';
+            document.body.style.right = '';
+            document.body.style.width = '';
+            
+            // Restore scroll position INSTANTLY (no visible scrolling animation)
+            const savedScrollY = document.body.dataset.savedScrollY || '0';
+            window.scrollTo({
+                top: parseInt(savedScrollY),
+                behavior: 'instant'  // This makes it instant with no animation
+            });
+            
+            // Ensure no page refresh happens
+            return false;
+        }, true); // Use capture phase
+        
+        // Also prevent any form submissions or link clicks that might cause refresh
+        emailModal.addEventListener('submit', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        
+        emailModal.addEventListener('click', function(e) {
+            // Prevent any link clicks from causing navigation
+            if (e.target.tagName === 'A' || e.target.closest('a')) {
+                // Allow the link to work but prevent page refresh
+                e.stopPropagation();
+            }
+        });
+    }
+});
+
+// Load email content via AJAX
+function loadEmailContent(emailId) {
+    fetch('/email/' + emailId, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showModalError(data.error);
+            return;
+        }
+        
+        renderEmailContent(data);
+    })
+    .catch(error => {
+        console.error('Error loading email:', error);
+        showModalError('Failed to load email. Please check your connection and try again.');
+    });
+}
+
+// Show modal error
+function showModalError(message) {
+    document.getElementById('modalLoading').classList.add('d-none');
+    document.getElementById('modalError').classList.remove('d-none');
+    document.getElementById('modalErrorMessage').textContent = message;
+}
+
+// Retry loading email
+function retryLoadEmail() {
+    if (currentEmailId) {
+        document.getElementById('modalLoading').classList.remove('d-none');
+        document.getElementById('modalError').classList.add('d-none');
+        loadEmailContent(currentEmailId);
+    }
+}
+
+// Render email content in modal
+function renderEmailContent(data) {
+    const email = data.email;
+    const analysis = data.analysis;
+    
+    console.log('Email data received:', email); // Debug log
+    console.log('Body type:', email.body_type); // Debug log
+    console.log('Body HTML length:', email.body_html ? email.body_html.length : 0); // Debug log
+    console.log('Body text length:', email.body_text ? email.body_text.length : 0); // Debug log
+    
+    // Hide loading, show content
+    document.getElementById('modalLoading').classList.add('d-none');
+    document.getElementById('modalContent').classList.remove('d-none');
+    
+    // Update subject
+    document.getElementById('modalSubject').textContent = email.subject || 'No Subject';
+    
+    // Update badges
+    const badgesContainer = document.getElementById('modalBadges');
+    badgesContainer.innerHTML = '';
+    
+    if (analysis.category_info) {
+        const categoryBadge = document.createElement('span');
+        categoryBadge.className = 'badge bg-' + getCategoryColor(analysis.category) + ' me-1';
+        categoryBadge.innerHTML = '<i class="fas fa-' + analysis.category_info.icon + ' me-1"></i> ' + ((analysis.category_info && analysis.category_info.display_name) || analysis.category || 'Unknown');
+        badgesContainer.appendChild(categoryBadge);
+    }
+    
+    if (analysis.risk_level) {
+        const riskBadge = document.createElement('span');
+        riskBadge.className = 'badge bg-' + getRiskColor(analysis.risk_level);
+        riskBadge.innerHTML = 'Risk: ' + analysis.risk_level;
+        badgesContainer.appendChild(riskBadge);
+    }
+    
+    // Update meta info
+    document.getElementById('modalSender').textContent = email.sender_display || email.sender || '-';
+    document.getElementById('modalDate').textContent = email.date || '-';
+    
+    if (email.to) {
+        document.getElementById('modalToRow').style.display = 'block';
+        document.getElementById('modalTo').textContent = email.to;
+    } else {
+        document.getElementById('modalToRow').style.display = 'none';
+    }
+    
+    // Update analysis section with creative card styling
+    const riskScore = analysis.risk_score || 0;
+    document.getElementById('modalRiskScore').textContent = riskScore;
+    
+    // Risk Score Card styling
+    const riskScoreCard = document.getElementById('riskScoreCard');
+    const riskScoreIcon = document.getElementById('riskScoreIcon');
+    const riskScoreBar = document.getElementById('riskScoreBar');
+    
+    const riskScoreEl = document.getElementById('modalRiskScore');
+    
+    if (riskScore >= 70) {
+        riskScoreCard.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+        riskScoreIcon.className = 'fas fa-exclamation-triangle fa-2x text-danger';
+        riskScoreBar.className = 'progress-bar bg-danger';
+        riskScoreEl.className = 'fw-bold fs-4 text-danger';
+    } else if (riskScore >= 40) {
+        riskScoreCard.style.background = 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+        riskScoreIcon.className = 'fas fa-exclamation-triangle fa-2x text-warning';
+        riskScoreBar.className = 'progress-bar bg-warning';
+        riskScoreEl.className = 'fw-bold fs-4 text-warning';
+    } else {
+        riskScoreCard.style.background = 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)';
+        riskScoreIcon.className = 'fas fa-check-circle fa-2x text-success';
+        riskScoreBar.className = 'progress-bar bg-success';
+        riskScoreEl.className = 'fw-bold fs-4 text-success';
+    }
+    riskScoreBar.style.width = riskScore + '%';
+    
+    // Confidence Card
+    const confidence = analysis.confidence ? Math.round(analysis.confidence) : 0;
+    document.getElementById('modalConfidence').textContent = confidence + '%';
+    document.getElementById('confidenceBar').style.width = confidence + '%';
+    
+    const confidenceCard = document.getElementById('confidenceCard');
+    const confidenceIcon = document.getElementById('confidenceIcon');
+    const confidenceBar = document.getElementById('confidenceBar');
+    const confidenceEl = document.getElementById('modalConfidence');
+    
+    if (confidence >= 80) {
+        confidenceCard.style.background = 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)';
+        confidenceIcon.className = 'fas fa-chart-line fa-2x text-success';
+        confidenceBar.className = 'progress-bar bg-success';
+        confidenceEl.className = 'fw-bold fs-4 text-success';
+    } else if (confidence >= 50) {
+        confidenceCard.style.background = 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+        confidenceIcon.className = 'fas fa-chart-line fa-2x text-warning';
+        confidenceBar.className = 'progress-bar bg-warning';
+        confidenceEl.className = 'fw-bold fs-4 text-warning';
+    } else {
+        confidenceCard.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+        confidenceIcon.className = 'fas fa-chart-line fa-2x text-danger';
+        confidenceBar.className = 'progress-bar bg-danger';
+        confidenceEl.className = 'fw-bold fs-4 text-danger';
+    }
+    
+    // Urgency Card styling
+    const urgencyCard = document.getElementById('urgencyCard');
+    const urgencyIcon = document.getElementById('urgencyIcon');
+    const urgencySpan = document.getElementById('modalUrgency');
+    const urgencyLevel = analysis.urgency_level || 'Low';
+    
+    urgencySpan.textContent = urgencyLevel;
+    
+    if (urgencyLevel === 'High') {
+        urgencyCard.style.background = 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)';
+        urgencyIcon.className = 'fas fa-fire fa-2x text-danger';
+        urgencySpan.className = 'fw-bold fs-4 text-danger';
+    } else if (urgencyLevel === 'Medium') {
+        urgencyCard.style.background = 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+        urgencyIcon.className = 'fas fa-bolt fa-2x text-warning';
+        urgencySpan.className = 'fw-bold fs-4 text-warning';
+    } else {
+        urgencyCard.style.background = 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)';
+        urgencyIcon.className = 'fas fa-envelope fa-2x text-success';
+        urgencySpan.className = 'fw-bold fs-4 text-success';
+    }
+    
+    // Category Card styling
+    const categoryCard = document.getElementById('categoryCard');
+    const categoryIcon = document.getElementById('categoryIcon');
+    const categorySpan = document.getElementById('modalCategory');
+    const category = analysis.category || 'Unknown';
+    const categoryDisplay = (analysis.category_info && analysis.category_info.display_name) ? analysis.category_info.display_name : (category.charAt(0).toUpperCase() + category.slice(1));
+    categorySpan.textContent = categoryDisplay;
+    
+    const categoryColor = getCategoryColor(category);
+    const colorVar = `var(--color-${categoryColor})`;
+    const backgrounds = {
+        'spam': 'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)',
+        'phishing': 'linear-gradient(135deg, #ffe0e0 0%, #ffb3b3 100%)',
+        'malware': 'linear-gradient(135deg, #ede9fe 0%, #c4b5fd 100%)',
+        'newsletter': 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)',
+        'promotion': 'linear-gradient(135deg, #fed7aa 0%, #fdba74 100%)',
+        'legitimate': 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)',
+    };
+    categoryCard.style.background = backgrounds[categoryColor] || 'linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%)';
+    categoryIcon.className = 'fas fa-' + (categoryIcons[categoryColor] || 'tag') + ' fa-2x';
+    categoryIcon.style.color = colorVar;
+    categorySpan.className = 'fw-bold fs-4';
+    categorySpan.style.color = colorVar;
+    
+    if (analysis.explanation_summary) {
+        document.getElementById('modalExplanationRow').style.display = 'block';
+        document.getElementById('modalExplanation').textContent = analysis.explanation_summary;
+    } else {
+        document.getElementById('modalExplanationRow').style.display = 'none';
+    }
+    
+// Update email body using sandboxed iframe for complete style isolation
+    const bodyContainer = document.getElementById('modalBodyContainer');
+
+    // Create iframe for complete style isolation
+    const iframe = document.createElement('iframe');
+    iframe.id = 'emailBodyIframe';
+    iframe.style.cssText = 'width: 100%; border: none; background: #ffffff; display: block;';
+    iframe.sandbox = 'allow-same-origin'; // Allow same-origin for styling but NO scripts/forms
+
+    // Clear container and add iframe
+    bodyContainer.innerHTML = '';
+    bodyContainer.appendChild(iframe);
+
+    if (email.body_type === 'html' && email.body_html) {
+        // Sanitize HTML - strip dangerous elements
+        var sanitized = email.body_html
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/\son\w+=(["'][^"']*["']|[^\s>]+)/gi, '')
+            .replace(/href=["']javascript:[^"']*["']/gi, 'href="#"')
+            .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+            .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, '')
+            .replace(/<embed\b[^>]*\/?>/gi, '')
+            .replace(/<link\b[^>]*rel=["']stylesheet[^>]*>/gi, '')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+
+        // Write sanitized HTML into iframe with overflow hidden on internal document
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        iframeDoc.open();
+        iframeDoc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    html, body { 
+                        overflow: hidden !important; 
+                        height: auto !important;
+                        max-height: none !important;
+                        min-height: 100%;
+                    }
+                    body { 
+                        color: #222; 
+                        font-size: 13px; 
+                        line-height: 1.4; 
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                        background: #fff; 
+                        padding: 12px;
+                    }
+                    img { max-width: 100% !important; height: auto !important; }
+                    table { max-width: 100% !important; }
+                    a { word-break: break-all; }
+                    * { max-width: 100%; }
+                </style>
+            </head>
+            <body>${sanitized}</body>
+            </html>
+        `);
+        iframeDoc.close();
+
+        // Calculate height robustly as content/images/fonts load
+        scheduleIframeResize(iframe);
+    } else if (email.body_text) {
+        // Plain text email - use iframe too for consistency
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        iframeDoc.open();
+        iframeDoc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    html, body { 
+                        overflow: hidden !important; 
+                        height: auto !important;
+                        max-height: none !important;
+                        min-height: 100%;
+                    }
+                    body { 
+                        color: #222; 
+                        font-size: 13px; 
+                        line-height: 1.4; 
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                        background: #fff; 
+                        padding: 12px; 
+                        white-space: pre-wrap; 
+                        word-wrap: break-word; 
+                    }
+                </style>
+            </head>
+            <body>${email.body_text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body>
+            </html>
+        `);
+        iframeDoc.close();
+
+        // Calculate height robustly as content/images/fonts load
+        scheduleIframeResize(iframe);
+    } else {
+        // No content
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        iframeDoc.open();
+        iframeDoc.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    html, body { 
+                        overflow: hidden !important; 
+                        height: auto !important;
+                        max-height: none !important;
+                        min-height: 100%;
+                    }
+                    body { 
+                        color: #999; 
+                        font-size: 13px; 
+                        line-height: 1.4; 
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                        background: #fff; 
+                        text-align: center; 
+                    }
+                </style>
+            </head>
+            <body><div style="padding: 40px 20px;"><i class="fas fa-inbox" style="font-size: 48px; color: #ddd; margin-bottom: 12px; display: block;"></i>No content available</div></body>
+            </html>
+        `);
+        iframeDoc.close();
+
+        // Calculate height robustly
+        scheduleIframeResize(iframe);
+    }
+
+    // Update "Open in New Tab" URL
+    currentEmailUrl = '/email/' + email.id;
+}
+
+// Set the email iframe height to fit its content exactly (no clipping)
+function resizeEmailIframe(iframe) {
+    try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        if (!doc || !doc.body) return;
+        const height = Math.max(
+            doc.body.scrollHeight,
+            doc.documentElement.scrollHeight,
+            doc.body.offsetHeight,
+            doc.documentElement.offsetHeight,
+            200
+        );
+        iframe.style.height = height + 'px';
+    } catch (e) {
+        /* ignore cross-origin / timing errors */
+    }
+}
+
+// Robust auto-resize: recalculate height as images/fonts/late layout settle.
+// Fixes the "only half content on first open" bug (images not yet loaded when
+// the single requestAnimationFrame measurement ran; cached on the 2nd open).
+function scheduleIframeResize(iframe) {
+    if (!iframe) return;
+
+    // Immediate layout pass
+    requestAnimationFrame(() => resizeEmailIframe(iframe));
+
+    // After iframe + all resources finish loading
+    iframe.addEventListener('load', () => resizeEmailIframe(iframe));
+
+    // Recompute as each image inside loads (primary fix)
+    try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        if (doc) {
+            const imgs = doc.querySelectorAll('img');
+            imgs.forEach(function (img) {
+                img.addEventListener('load', () => resizeEmailIframe(iframe));
+                img.addEventListener('error', () => resizeEmailIframe(iframe));
+            });
+        }
+    } catch (e) { /* ignore */ }
+
+    // Delayed fallbacks for slow resources / late reflow / modal transition
+    setTimeout(() => resizeEmailIframe(iframe), 300);
+    setTimeout(() => resizeEmailIframe(iframe), 800);
+
+    // Continuous tracking so height always matches content (Gmail-like)
+    try {
+        if (window.ResizeObserver && iframe.contentDocument && iframe.contentDocument.body) {
+            const ro = new ResizeObserver(() => resizeEmailIframe(iframe));
+            ro.observe(iframe.contentDocument.body);
+        } else {
+            let ticks = 0;
+            const iv = setInterval(() => {
+                resizeEmailIframe(iframe);
+                if (++ticks > 20) clearInterval(iv);
+            }, 200);
+        }
+    } catch (e) { /* ignore */ }
+}
+
+// Helper functions for colors and emojis - MATCHING RESULTS PAGE EXACTLY
+const categoryIcons = {
+    'legitimate': 'check-circle',
+    'promotion': 'bullhorn',
+    'phishing': 'skull-crossbones',
+    'malware': 'virus',
+    'newsletter': 'newspaper',
+    'spam': 'exclamation-triangle'
+};
+
+function getCategoryColor(category) {
+    const colors = {
+        'legitimate': 'legitimate',
+        'promotion': 'promotion',
+        'phishing': 'phishing',
+        'malware': 'malware',
+        'newsletter': 'newsletter',
+        'spam': 'spam'
+    };
+    return colors[category] || 'secondary';
+}
+
+function getRiskColor(riskLevel) {
+    const colors = {
+        'High': 'danger',
+        'Medium': 'warning',
+        'Low': 'success'
+    };
+    // Backward compatibility for legacy 5-level values
+    const legacy = { 'Critical': 'High', 'Very Low': 'Low' };
+    return colors[legacy[riskLevel] || riskLevel] || 'secondary';
+}
+
+function getRiskTextColor(riskScore) {
+    if (riskScore >= 61) return 'danger';
+    if (riskScore >= 41) return 'warning';
+    return 'success';
+}
+
+function getUrgencyColor(urgencyLevel) {
+    const colors = {
+        'High': 'danger',
+        'Medium': 'warning',
+        'Low': 'success'
+    };
+    return colors[urgencyLevel] || 'secondary';
+}
+
+function getUrgencyEmoji(urgencyLevel) {
+    const emojis = {
+        'High': '🔥',
+        'Medium': '⚡',
+        'Low': '📩'
+    };
+    return emojis[urgencyLevel] || '📧';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Add click handlers to email rows and cards
+document.addEventListener('DOMContentLoaded', function() {
+    // Desktop table rows
+    document.querySelectorAll('.email-row').forEach(row => {
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', function(e) {
+            // Don't trigger if clicking on a link or button
+            if (e.target.tagName === 'A' || e.target.closest('a') || e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                return;
+            }
+            
+            // Prevent default behavior
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const emailId = this.querySelector('a[href*="/email/"]');
+            if (emailId) {
+                const id = emailId.href.split('/email/')[1];
+                openEmailModal(id, e);
+            }
+        });
+    });
+    
+    // Mobile cards - intercept clicks to open modal instead of navigating
+    document.querySelectorAll('.email-card-grid a').forEach(link => {
+        link.addEventListener('click', function(e) {
+            // Always prevent default navigation
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const href = this.getAttribute('href');
+            if (href && href.includes('/email/')) {
+                const id = href.split('/email/')[1];
+                openEmailModal(id, e);
+            }
+        });
+    });
+    
+    // Subject links - intercept clicks to open modal instead of navigating
+    document.querySelectorAll('.email-subject-link').forEach(link => {
+        link.addEventListener('click', function(e) {
+            // Always prevent default navigation
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const emailId = this.getAttribute('data-email-id');
+            if (emailId) {
+                openEmailModal(emailId, e);
+            }
+        });
+    });
+});
+</script>
+
+<!-- REMOVED DUPLICATE SCRIPT - This was causing page refresh -->
+
+<script>
+// Async Analysis with Progress (same as dashboard)
+let analysisPollingInterval = null;
+let currentTaskId = null;
+let analysisTimerInterval = null;
+let analysisStartTime = null;
+let isRateLimited = false;
+
+function refreshAsyncAnalysis() {
+    const btn = document.getElementById('refreshAnalysisBtn');
+    if (btn.disabled || isRateLimited) return;
+
+    const stored = localStorage.getItem('rateLimitCooldown');
+    if (stored) {
+        const remaining = Math.ceil((parseInt(stored) - Date.now()) / 1000);
+        if (remaining > 0) { startRateLimitCountdown(remaining); return; }
+        localStorage.removeItem('rateLimitCooldown');
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+    showAnalysisModal();
+
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 50000);
+
+    fetch('/api/start_analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
+    })
+    .then(response => {
+        clearTimeout(fetchTimeout);
+        if (response.status === 429) {
+            return response.json().then(data => {
+                const err = new Error(data.message || 'Rate limit exceeded');
+                err.retryAfter = data.retry_after || 60;
+                throw err;
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.error) throw new Error(data.error);
+        currentTaskId = data.task_id;
+        updateModalStatus(0, 'Analysis started. Waiting for progress...');
+        startProgressPolling(data.task_id);
+    })
+    .catch(error => {
+        clearTimeout(fetchTimeout);
+        console.error('Error starting analysis:', error);
+        currentTaskId = null;
+        if (error.name === 'AbortError') {
+            updateModalStatus(0, 'Analysis timed out. Please try again.', true);
+            resetAnalysisButton();
+        } else if (error.retryAfter) {
+            localStorage.setItem('rateLimitCooldown', Date.now() + (error.retryAfter * 1000));
+            updateModalStatus(0, `Rate limit reached. Please wait ${error.retryAfter}s...`, true);
+            startRateLimitCountdown(error.retryAfter);
+        } else {
+            updateModalStatus(0, 'Failed to start analysis: ' + error.message, true);
+            resetAnalysisButton();
+        }
+    });
+}
+
+function startProgressPolling(taskId) {
+    if (analysisPollingInterval) clearInterval(analysisPollingInterval);
+    analysisPollingInterval = setInterval(() => {
+        fetch(`/api/analysis_status/${taskId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) throw new Error(data.error);
+            updateModalStatus(data.progress, data.status);
+            if (data.complete) {
+                clearInterval(analysisPollingInterval);
+                analysisPollingInterval = null;
+                currentTaskId = null;
+                if (data.error) {
+                    updateModalStatus(data.progress, 'Analysis failed: ' + data.error, true);
+                    resetAnalysisButton();
+                } else {
+                    updateModalStatus(100, 'Analysis complete! Redirecting to results...');
+                    setTimeout(() => { window.location.href = '/results'; }, 1500);
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error polling status:', error);
+            clearInterval(analysisPollingInterval);
+            analysisPollingInterval = null;
+            currentTaskId = null;
+            updateModalStatus(0, 'Error checking progress: ' + error.message, true);
+            resetAnalysisButton();
+        });
+    }, 500);
+}
+
+function showAnalysisModal() {
+    let modal = document.getElementById('analysisProgressModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'analysisProgressModal';
+        modal.className = 'modal fade show';
+        modal.style.display = 'block';
+        modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        modal.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content" style="border: none; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                    <div class="modal-header bg-gradient-primary text-white border-0" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);">
+                        <h5 class="modal-title fw-bold">
+                            <i class="fas fa-search me-2"></i> Analyzing Your Inbox
+                        </h5>
+                    </div>
+                    <div class="modal-body text-center py-5">
+                        <div class="mb-4">
+                            <div class="analysis-icon-container" style="width: 80px; height: 80px; margin: 0 auto; position: relative;">
+                                <div class="custom-spinner" style="width: 80px; height: 80px; border: 4px solid rgba(14, 165, 233, 0.2); border-top: 4px solid #0ea5e9; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                                <i class="fas fa-envelope-open-text position-absolute" style="top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; color: #0ea5e9;"></i>
+                            </div>
+                        </div>
+                        <div class="mb-4 px-2">
+                            <div class="progress" style="height: 35px; border-radius: 20px; background: linear-gradient(90deg, #e0e7ff 0%, #f0f9ff 100%); box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); overflow: hidden;">
+                                <div id="analysisProgressBar" class="progress-bar" role="progressbar" style="width: 0%; border-radius: 20px; background: linear-gradient(90deg, #0ea5e9 0%, #06b6d4 50%, #22c55e 100%); box-shadow: 0 4px 15px rgba(14, 165, 233, 0.4); transition: width 0.3s ease-out; position: relative; overflow: hidden;">
+                                    <span id="analysisProgressText" class="fw-bold d-flex align-items-center justify-content-center h-100" style="text-shadow: 0 1px 2px rgba(0,0,0,0.2); font-size: 1rem;">0%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p id="analysisStatusText" class="mb-2 fw-bold fs-5" style="color: #1e293b;">Initializing...</p>
+                        <div class="mb-3">
+                            <span class="badge bg-light text-dark px-3 py-2" style="border-radius: 20px; font-size: 0.9rem;">
+                                <i class="fas fa-clock me-1" style="color: #0ea5e9;"></i>
+                                Elapsed: <span id="elapsedTime" class="fw-bold">0s</span>
+                            </span>
+                        </div>
+                        <small class="text-active d-block">Please wait while we analyze your emails with AI</small>
+                        <button type="button" class="btn btn-outline-danger mt-4 px-4" onclick="cancelAnalysis()" style="border-radius: 25px; font-weight: 600;">
+                            <i class="fas fa-times me-1"></i> Cancel Analysis
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+    } else {
+        modal.className = 'modal fade show';
+        modal.style.display = 'block';
+        modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+    }
+    analysisStartTime = Date.now();
+    if (analysisTimerInterval) clearInterval(analysisTimerInterval);
+    analysisTimerInterval = setInterval(updateElapsedTime, 1000);
+}
+
+function updateElapsedTime() {
+    if (!analysisStartTime) return;
+    const elapsed = Math.floor((Date.now() - analysisStartTime) / 1000);
+    const minutes = Math.floor(elapsed / 60);
+    const seconds = elapsed % 60;
+    const el = document.getElementById('elapsedTime');
+    if (el) el.textContent = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+function updateModalStatus(progress, status, isError = false) {
+    const bar = document.getElementById('analysisProgressBar');
+    const pct = document.getElementById('analysisProgressText');
+    const txt = document.getElementById('analysisStatusText');
+    if (bar) {
+        bar.style.width = progress + '%';
+        bar.setAttribute('aria-valuenow', progress);
+        bar.className = isError ? 'progress-bar bg-danger' : progress >= 100 ? 'progress-bar bg-success' : 'progress-bar progress-bar-striped progress-bar-animated';
+    }
+    if (pct) pct.textContent = progress + '%';
+    if (txt) {
+        txt.textContent = status;
+        txt.className = isError ? 'mb-0 fw-bold text-danger' : progress >= 100 ? 'mb-0 fw-bold text-success' : 'mb-0 fw-bold';
+    }
+}
+
+function startRateLimitCountdown(seconds) {
+    const btn = document.getElementById('refreshAnalysisBtn');
+    if (!btn) return;
+    isRateLimited = true;
+    btn.disabled = true;
+    let remaining = seconds;
+    const interval = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(interval);
+            isRateLimited = false;
+            localStorage.removeItem('rateLimitCooldown');
+            resetAnalysisButton();
+        } else {
+            btn.innerHTML = `<i class="fas fa-hourglass-half"></i> Wait ${remaining}s...`;
+        }
+    }, 1000);
+}
+
+function resetAnalysisButton() {
+    const btn = document.getElementById('refreshAnalysisBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-refresh"></i> Scan Again';
+    }
+}
+
+async function cancelAnalysis() {
+    if (!currentTaskId) {
+        if (analysisPollingInterval) clearInterval(analysisPollingInterval);
+        if (analysisTimerInterval) clearInterval(analysisTimerInterval);
+        analysisPollingInterval = null;
+        analysisTimerInterval = null;
+        hideAnalysisModal();
+        resetAnalysisButton();
+        return;
+    }
+    const taskId = currentTaskId;
+    updateModalStatus(0, 'Cancelling analysis...', true);
+    if (analysisPollingInterval) { clearInterval(analysisPollingInterval); analysisPollingInterval = null; }
+    if (analysisTimerInterval) { clearInterval(analysisTimerInterval); analysisTimerInterval = null; }
+    try {
+        await fetch(`/api/cancel_analysis/${taskId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    } catch (err) { console.error('Cancel API call failed:', err); }
+    hideAnalysisModal();
+    resetAnalysisButton();
+    currentTaskId = null;
+}
+
+function hideAnalysisModal() {
+    const modal = document.getElementById('analysisProgressModal');
+    if (modal) { modal.style.display = 'none'; modal.className = 'modal fade'; }
+    currentTaskId = null;
+}
+
+window.addEventListener('beforeunload', function() {
+    if (analysisPollingInterval) clearInterval(analysisPollingInterval);
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const stored = localStorage.getItem('rateLimitCooldown');
+    if (stored) {
+        const remaining = Math.ceil((parseInt(stored) - Date.now()) / 1000);
+        if (remaining > 0) { startRateLimitCountdown(remaining); }
+        else { localStorage.removeItem('rateLimitCooldown'); }
+    }
+});
+</script>
+
+{% endblock %}
