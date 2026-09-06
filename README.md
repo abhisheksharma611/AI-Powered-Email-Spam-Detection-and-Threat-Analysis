@@ -429,6 +429,4 @@ Copyright (c) 2026 **Abhishek Kumar T**
 
 [⬆ Back to top](#-ai-powered-email-spam-detection-and-threat-analysis)
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=2563EB&height=120&section=footer" alt="footer wave" width="100%"/>
-
 </div>
