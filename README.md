@@ -59,6 +59,24 @@ All screenshots are PNGs under `docs/screenshots/`. App icons: `static/img/logo.
 Risk pills: 🟢 Low (0–40), ⚠️ Medium (41–60), 🔴 High (61–100).
 Icons come from Font Awesome (CDN) plus the emoji above; charts from Chart.js.
 
+## Architecture
+
+```text
+Browser (Jinja pages + vanilla JS + Chart.js)
+  │  Flask routes (app.py — auth guard → rate limit → service call)
+  ├── utils/auth.py          Google OAuth 2.0 (Authlib, offline + consent, nonce)
+  ├── utils/gmail_client.py  Gmail API readonly (ID list → batch get ×20 → parse)
+  ├── models/predictor.py    0.90 × RoBERTa + 0.10 × Ensemble per batch of 10
+  ├── utils/helpers.py       urgency + sender reputation + learned keywords
+  │                          + risk breakdown + 30–40 word summary
+  ├── utils/ai_explanation.py  optional NVIDIA NIM summary (15 s timeout, silent skip)
+  └── models/email_model.py  SQLite via SQLAlchemy (Email, SenderReputation,
+                             LearnedKeyword, OAuthStore) + Alembic migrations
+```
+
+One request path, one analysis pipeline — the sync route and the background
+thread call the same `_process_single_email`, so both give identical verdicts.
+
 ## How One Scan Works
 
 ```text
@@ -117,6 +135,18 @@ Empty text → 400, wrong content type → 415.
 `error`). Cancel with `POST /api/cancel_analysis/<task_id>`. Tasks are
 per-user isolated and expire.
 
+### Rate limits (in-process, single worker)
+
+| Endpoint | Limit |
+|---|---|
+| `/analyze_emails`, `/api/analyze_text` | 10/min |
+| `/bulk_analyze`, `/api/start_analysis` | 5/min |
+| `/email/<id>` | 20/min |
+| `/api/last_scan` | 30/min |
+| `/api/analysis_status` | 120/min |
+
+Over-limit calls get JSON `429` with `Retry-After`.
+
 ## Prerequisites
 
 - Python 3.11, `pip`, `git`, a Google account.
@@ -146,7 +176,7 @@ pip install -r requirements.txt
 Copy-Item .env.example .env   # then edit .env and fill values
 ```
 
-**4. Model weights** (code ship without them — download once):
+**4. Model weights** (code ships without them — download once):
 
 ```powershell
 gh release download v1.0-models -D models/ --repo abhisheksharma611/AI-Powered-Email-Spam-Detection-and-Threat-Analysis
@@ -197,7 +227,9 @@ anything. Revoke anytime from Google Account → Security. Never commit
 | `NVIDIA_NIM_BASE_URL` / `NVIDIA_NIM_API_KEY` / `NVIDIA_NIM_MODEL` | Optional per-mail AI summaries. Absent → skipped silently (15 s timeout). |
 
 Database is SQLite (`emails.db`, auto-created). Sessions are server-side
-filesystem cache — OAuth tokens never sit in browser cookies.
+filesystem cache — OAuth tokens never sit in browser cookies. Behind a
+proxy, the app respects `X-Forwarded-Proto`/`X-Forwarded-Host` so the OAuth
+redirect stays https-correct.
 
 ## Models
 
@@ -210,10 +242,24 @@ Running needs four files from **Releases → `v1.0-models`**, placed in `models/
 | `vectorizer.joblib` | ~1.3 MB | 20k TF-IDF (1–2gram) vocabulary |
 | `encoder.joblib` | tiny | Label map |
 
-Retrain from scratch: `python models/roberta_train.py` →
-`python models/ensemble_train.py` →
-`python models/evaluate.py --model both` (scores on the frozen
-`test_set.csv`, which is eval-only and never trained on).
+### Training (exact recipe)
+
+- **Split:** stratified 80/10/10, seed 42. `test_set.csv` is frozen —
+  eval-only, never trained on.
+- **RoBERTa** (`models/roberta_train.py`): `roberta-base`, batch 8 ×
+  grad-accum 2 (effective 16), AdamW LR 2e-5, 6 epochs, early stop
+  (patience 2) on **macro-F1** to protect the small malware class,
+  class-weighted loss, FP16 on CUDA.
+- **Ensemble** (`models/ensemble_train.py`): TF-IDF 20k (1–2gram,
+  sublinear, min_df 2, max_df 0.95) on cleaned text plus 6 engineered
+  signals from raw text (length, special-char ratio, caps ratio, URL flag,
+  phone flag, urgency-word score) → one fit each of MultinomialNB,
+  balanced LogisticRegression, balanced RandomForest, GradientBoosting,
+  MLP (128×64), combined as soft-voting.
+- **Eval:** `python models/evaluate.py --model both` prints accuracy,
+  macro/weighted precision/recall/F1, confusion matrix, and per-sample
+  latency for each model plus the 90/10 blend. Run it before claiming any
+  number — this README cites no accuracy the repo hasn't measured.
 
 ## Dataset
 
@@ -222,14 +268,73 @@ spam/phishing collections plus author-written synthetic mails, labelled
 into 6 classes (spam 6457, legitimate 5532, promotion 5208, phishing 4837,
 newsletter 4502, malware 3492). Columns: `text,label,category`.
 
-## Scoring Rules
+## Scoring Engine (exactly as coded)
 
-Base risk by category: legitimate 5, newsletter 10, promotion 30, spam 50,
-phishing 80, malware 85 — scaled by model confidence, halved below 25%
-confidence. Sender with a bad history adds +10/+20, matched learned
-keywords add up to +20. Level: High ≥ 61, Medium ≥ 41, else Low.
-Urgency is separate: immediate-pressure words +40, 24–48h deadlines +30,
-hour mentions +25, day deadlines +20, week +10, important-sender +20.
+**Base risk** by category: legitimate 5, newsletter 10, promotion 30,
+spam 50, phishing 80, malware 85 — scaled by model confidence, halved
+below 25% confidence, clamped 0–100. Level: High ≥ 61, Medium ≥ 41,
+else Low.
+
+**Urgency** (independent of malice): immediate-pressure words
+(immediately, urgent, asap, right now, act now) +40; 24–48h deadlines
++30; hour mentions +25; day deadlines +20; week-level +10; important
+sender (manager, HR, security, finance, C-suite patterns) +20. Product /
+newsletter context (e.g. "new release available") halves deadline boosts
+so launch announcements don't read as attacks.
+
+**Sender reputation:** per-sender counters (phishing ×4, malware ×4,
+spam ×2, high-urgency ×1) decayed monthly toward half weight, normalized
+against mail volume. Medium history adds +10, High adds +20 to new mail;
+under 3 mails seen, always Low.
+
+**Learned keywords:** terms extracted from phishing/malware mail at
+≥80% confidence (stopwords and short tokens filtered, weight grows with
+frequency, capped at 20 total boost). Only high-confidence verdicts teach,
+so one misclassification can't poison the memory.
+
+Every verdict stores its `risk_breakdown` (each component's points,
+matched keywords, detection flags) and a 30–40 word plain-language
+`explanation_summary` — both visible on the email page.
+
+## Gmail Integration Notes
+
+- Lists message IDs first, then fetches bodies in batches of 20 with a
+  short pause between batches; Gmail `429`s requeue with exponential
+  backoff (up to 3 rounds) instead of failing the scan.
+- HTML bodies convert to text for the model; the full email view keeps
+  sanitized HTML via bleach (scripts, iframes, forms, event handlers, and
+  `javascript:` URLs stripped).
+- Dates parse from RFC 2822 headers to UTC; analytics buckets by day.
+- Expired/invalid grants surface a clean "login again" prompt, never a
+  traceback. Refresh tokens are topped up from encrypted storage when
+  Google omits them on re-login.
+
+## Security Model
+
+- Server-side sessions; OAuth tokens never in cookies. Refresh token kept
+  server-side and reused across logins.
+- Security headers on every response: `nosniff`, `DENY` framing, strict
+  Content-Security-Policy, `Referrer-Policy`.
+- Per-user data isolation on every query (`user_email` scope); task ids
+  checked against the session owner.
+- `bleach` sanitization on every rendered email body; `escape()` on the
+  email-id route parameter.
+- See `SECURITY.md` for disclosure rules.
+
+## Database Schema
+
+`Email` (Gmail id + user composite identity; subject/sender/snippet/date;
+category, is_spam, risk, confidence; urgency; breakdown JSON + summary),
+`SenderReputation` (per-sender counters, score, level),
+`LearnedKeyword` (keyword, category, frequency, weight),
+`OAuthStore` (per-user refresh token). Five Alembic revisions, single
+head — `flask db upgrade` builds everything from empty.
+
+## Testing & CI
+
+`.github/workflows/ci.yml` compiles all webapp sources and smoke-runs the
+migration chain on every push/PR — no deploy step. Model quality is
+checked by `models/evaluate.py`, not by CI (weights are release assets).
 
 ## Folder Structure (as in VS Code)
 
