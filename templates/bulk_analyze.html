@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Bulk Analyze - SpamProtection{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 900px;">
+    <h2 class="mb-1"><i class="fas fa-layer-group me-2"></i>Bulk Analyze</h2>
+    <p class="text-muted mb-4">Paste up to 100 messages (one per block, blank line between messages) and classify them without touching Gmail.</p>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <label for="bulkText" class="form-label">Messages</label>
+            <textarea id="bulkText" class="form-control" rows="8" placeholder="Paste message 1 here...
+
+Paste message 2 here..."></textarea>
+            <button id="bulkBtn" class="btn btn-primary mt-3" onclick="submitBulk()">
+                <i class="fas fa-bolt me-2"></i>Analyze
+            </button>
+        </div>
+    </div>
+
+    <div id="bulkSummary"></div>
+    <div id="bulkResults"></div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+async function submitBulk() {
+    const btn = document.getElementById('bulkBtn');
+    const raw = document.getElementById('bulkText').value;
+    const texts = raw.split(/\n\s*\n/).map(t => t.trim()).filter(t => t.length > 0);
+    if (texts.length === 0) { alert('Paste at least one message.'); return; }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Analyzing...';
+    try {
+        const resp = await fetch('{{ url_for("bulk_analyze") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texts: texts })
+        });
+        const data = await resp.json();
+        if (!resp.ok) { throw new Error(data.error || ('HTTP ' + resp.status)); }
+        renderBulk(data);
+    } catch (e) {
+        document.getElementById('bulkResults').innerHTML =
+            '<div class="alert alert-danger">Analysis failed: ' + e.message + '</div>';
+        document.getElementById('bulkSummary').innerHTML = '';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-bolt me-2"></i>Analyze';
+    }
+}
+function renderBulk(data) {
+    const s = data.summary;
+    document.getElementById('bulkSummary').innerHTML =
+        '<div class="alert alert-info">Analyzed <strong>' + s.total_analyzed + '</strong> messages — ' +
+        'spam: <strong>' + s.spam_detected + '</strong> (' + s.spam_percentage + '%), ' +
+        'threats: <strong>' + s.threat_count + '</strong>, ' +
+        'took ' + s.analysis_time + 's.</div>';
+    let rows = '';
+    data.results.forEach(r => {
+        rows += '<tr><td>' + r.index + '</td><td>' + escapeHtml(r.text) + '</td>' +
+            '<td><span class="badge bg-secondary">' + r.category + '</span></td>' +
+            '<td>' + r.risk_score + ' (' + r.risk_level + ')</td>' +
+            '<td>' + r.confidence.toFixed(1) + '%</td></tr>';
+    });
+    document.getElementById('bulkResults').innerHTML =
+        '<div class="table-responsive"><table class="table table-striped">' +
+        '<thead><tr><th>#</th><th>Text</th><th>Category</th><th>Risk</th><th>Confidence</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div>';
+}
+function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+{% endblock %}

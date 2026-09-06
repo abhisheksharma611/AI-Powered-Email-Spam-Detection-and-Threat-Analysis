@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}403 Forbidden - SpamProtection{% endblock %}
+{% block content %}
+<div class="container py-5 text-center" style="max-width: 600px;">
+    <h1 class="display-4">⛔ 403</h1>
+    <p class="lead">You don't have permission to view this page.</p>
+    <p class="text-muted">If you followed a link here, try logging in again or go back to safety.</p>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-primary me-2">
+        <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+    </a>
+    <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Home</a>
+</div>
+{% endblock %}
