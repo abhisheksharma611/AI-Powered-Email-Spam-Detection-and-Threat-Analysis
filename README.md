@@ -379,11 +379,12 @@ AI-Powered-Email-Spam-Detection-and-Threat-Analysis/
 │   ├── img/logo.png                  # navbar + login artwork (PNG, 37 KB)
 │   ├── img/favicon.ico               # browser tab icon (ICO, 15 KB)
 │   └── js/main.js                    # polling, charts, timezone sync
-├── templates/                        # 10 Jinja pages (CDN: Bootstrap 5,
+├── templates/                        # 12 Jinja pages (CDN: Bootstrap 5,
 │                                      # Font Awesome icons, Chart.js)
 │   ├── base.html / index.html / login.html / dashboard.html
 │   ├── results.html / email_view.html / analytics.html
-│   └── threat_console.html / 404.html / 500.html
+│   ├── threat_console.html / bulk_analyze.html
+│   └── 404.html / 500.html / 403.html
 ├── utils/
 │   ├── auth.py / gmail_client.py / helpers.py / ai_explanation.py
 ├── app.py / config.py                # Flask app, routes, analysis pipeline
