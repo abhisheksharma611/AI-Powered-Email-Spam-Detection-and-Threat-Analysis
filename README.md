@@ -20,6 +20,9 @@ project by **Abhishek Kumar T**. No hosting, no data leaves your machine.
 |---|---|
 | ![Results table](docs/screenshots/results.png) | ![Email view with analysis](docs/screenshots/email-view.png) |
 
+All screenshots are PNGs under `docs/screenshots/`. App icons: `static/img/logo.png`
+(navbar + login artwork) and `static/img/favicon.ico` (browser tab).
+
 ## Features
 
 - **6-class classification** — legitimate, spam, promotion, phishing, malware,
@@ -41,6 +44,20 @@ project by **Abhishek Kumar T**. No hosting, no data leaves your machine.
   distribution, 7-day trend, high-risk timeline.
 - **Per-mail view** — sanitized body (XSS-stripped), 30–40 word explanation,
   full risk breakdown.
+
+## Category & Risk Legend (as shown in the UI)
+
+| Category | Badge | Meaning |
+|---|---|---|
+| ✅ Not Spam (`legitimate`) | green | Safe mail |
+| 📢 Promotion | blue | Marketing, never counted as spam |
+| 📰 Newsletter | grey | Subscriptions, never counted as spam |
+| 🚨 Spam | red | Bulk junk |
+| 🎣 Phishing | dark red | Credential-theft attempt |
+| 🦠 Malware | purple | Malicious payload suspected |
+
+Risk pills: 🟢 Low (0–40), ⚠️ Medium (41–60), 🔴 High (61–100).
+Icons come from Font Awesome (CDN) plus the emoji above; charts from Chart.js.
 
 ## How One Scan Works
 
@@ -100,17 +117,60 @@ Empty text → 400, wrong content type → 415.
 `error`). Cancel with `POST /api/cancel_analysis/<task_id>`. Tasks are
 per-user isolated and expire.
 
-## Quickstart
+## Prerequisites
+
+- Python 3.11, `pip`, `git`, a Google account.
+- ~2 GB free for the four model files, ~500 MB for pip packages.
+- Windows PowerShell commands below; macOS/Linux equivalents differ only in
+  venv activation (`source venv/bin/activate`) and `cp` vs `Copy-Item`.
+
+## Setup — Step by Step
+
+**1. Clone and enter the folder:**
+
+```powershell
+git clone https://github.com/abhisheksharma611/AI-Powered-Email-Spam-Detection-and-Threat-Analysis.git
+cd "AI-Powered-Email-Spam-Detection-and-Threat-Analysis"
+```
+
+**2. Virtual environment + dependencies:**
 
 ```powershell
 python -m venv venv; venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-Copy-Item .env.example .env   # fill in your own keys (next section)
-flask db upgrade
-python app.py                 # http://localhost:5000
 ```
 
-A 50-mail scan takes roughly a minute on a laptop (torch CPU).
+**3. Environment file** (everyone brings their own keys — see Gmail Keys):
+
+```powershell
+Copy-Item .env.example .env   # then edit .env and fill values
+```
+
+**4. Model weights** (code ship without them — download once):
+
+```powershell
+gh release download v1.0-models -D models/ --repo abhisheksharma611/AI-Powered-Email-Spam-Detection-and-Threat-Analysis
+```
+
+No `gh` CLI? Download the four files from the
+[Releases page](../../releases/tag/v1.0-models) into `models/` manually.
+
+**5. Database:**
+
+```powershell
+flask db upgrade
+```
+
+**6. Run** — pick one:
+
+```powershell
+python app.py                 # dev server, http://localhost:5000
+gunicorn app:app --workers 1  # production-style, single worker only
+python run_local.py           # guided setup + run (installs deps, checks .env)
+```
+
+Then: login with Google → Dashboard → Scan inbox (10 mails to start) →
+Results → open a mail → Analytics.
 
 ## Gmail Keys (Everyone Brings Their Own)
 
@@ -150,8 +210,8 @@ Running needs four files from **Releases → `v1.0-models`**, placed in `models/
 | `vectorizer.joblib` | ~1.3 MB | 20k TF-IDF (1–2gram) vocabulary |
 | `encoder.joblib` | tiny | Label map |
 
-The repo and zip ship code only. Retrain from scratch:
-`python models/roberta_train.py` → `python models/ensemble_train.py` →
+Retrain from scratch: `python models/roberta_train.py` →
+`python models/ensemble_train.py` →
 `python models/evaluate.py --model both` (scores on the frozen
 `test_set.csv`, which is eval-only and never trained on).
 
@@ -171,25 +231,68 @@ keywords add up to +20. Level: High ≥ 61, Medium ≥ 41, else Low.
 Urgency is separate: immediate-pressure words +40, 24–48h deadlines +30,
 hour mentions +25, day deadlines +20, week +10, important-sender +20.
 
-## Project Structure
+## Folder Structure (as in VS Code)
 
 ```text
-app.py                  # routes, analysis pipeline, background tasks
-config.py               # env-driven Flask config
-models/                 # predictor, RoBERTa loader, training + eval scripts, CSVs
-utils/                  # OAuth, Gmail client, urgency/keyword/risk helpers, AI explainer
-templates/              # 10 Jinja pages
-static/                 # CSS + JS
-migrations/             # single-head Alembic chain
-requirements.txt        # web runtime deps
+AI-Powered-Email-Spam-Detection-and-Threat-Analysis/
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md
+│   │   └── feature_request.md
+│   └── workflows/
+│       └── ci.yml                    # compile + migration smoke, no deploy
+├── docs/
+│   └── screenshots/
+│       ├── landing.png               # landing page (PNG)
+│       ├── dashboard.png             # dashboard (PNG)
+│       ├── results.png               # results table (PNG)
+│       └── email-view.png            # email view modal (PNG)
+├── migrations/
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/                     # 5 Alembic revisions, single head
+├── models/
+│   ├── email_model.py                # Email, SenderReputation, LearnedKeyword, OAuthStore
+│   ├── predictor.py                  # 0.90 RoBERTa + 0.10 ensemble orchestrator
+│   ├── roberta_model.py              # loader + batched inference
+│   ├── roberta_train.py / ensemble_train.py / evaluate.py
+│   ├── utils/preprocessing.py        # shared train/serve text features
+│   ├── final_training_dataset.csv    # 30k rows, committed
+│   └── test_set.csv                  # frozen holdout, committed
+│   └── (*.pth / *.joblib ignored — from Releases)
+├── static/
+│   ├── css/style.css                 # custom theme (54 KB)
+│   ├── img/logo.png                  # navbar + login artwork (PNG, 37 KB)
+│   ├── img/favicon.ico               # browser tab icon (ICO, 15 KB)
+│   └── js/main.js                    # polling, charts, timezone sync
+├── templates/                        # 10 Jinja pages (CDN: Bootstrap 5,
+│                                      # Font Awesome icons, Chart.js)
+│   ├── base.html / index.html / login.html / dashboard.html
+│   ├── results.html / email_view.html / analytics.html
+│   └── threat_console.html / 404.html / 500.html
+├── utils/
+│   ├── auth.py / gmail_client.py / helpers.py / ai_explanation.py
+├── app.py / config.py                # Flask app, routes, analysis pipeline
+├── requirements.txt / Procfile / runtime.txt / alembic.ini
+├── run_local.py                      # guided local setup + run
+├── LICENSE / README.md / SECURITY.md / CONTRIBUTING.md / CODE_OF_CONDUCT.md
+└── .env.example / .gitignore
 ```
 
-## Tech Stack
+Media formats in repo: **PNG** (screenshots, logo), **ICO** (favicon).
+No JPGs ship — report-only JPGs stay out via `.gitignore`. Category/risk
+icons are Font Awesome classes + emoji (see legend above), not image files.
 
-Python 3.11, Flask 2.3, Flask-Login, Flask-Migrate, SQLAlchemy, Authlib,
-Gmail API, torch (CPU), transformers, scikit-learn, bleach, Babel,
-Jinja2, Bootstrap 5, Chart.js. Training-only extras (datasets, plotting,
-kaggle) stay out of the web path.
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `/api/analyze_text` returns 503 | `models/` weights missing — do Setup step 4. |
+| Google `redirect_uri_mismatch` | Redirect URI in Cloud Console must match exactly, including scheme/host/port. |
+| `flask db upgrade` fails with multiple heads | Pull latest; migrations are single-head since the open-source commit. |
+| Port 5000 busy | `python app.py` takes `PORT` env, or stop the other server. |
+| Scan returns nothing | Empty inbox or revoked token — re-login; check terminal for Gmail 429 backoff lines. |
+| `ModuleNotFoundError` | venv not activated or `pip install -r requirements.txt` skipped. |
 
 ## Honest Limitations
 
