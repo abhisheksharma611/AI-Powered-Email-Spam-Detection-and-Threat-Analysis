@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}SpamProtection - AI Email Security{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="hero-section">
+    <div class="container">
+        <div class="row align-items-center min-vh-100">
+            <div class="col-lg-6">
+                <div class="hero-content">
+                    <h1 class="display-4 fw-bold text-white mb-4">
+                        <i class="fas fa-shield-alt"></i>
+                        Protect Your Inbox with AI
+                    </h1>
+                    <p class="lead text-white mb-4">
+                        Advanced machine learning algorithms detect and categorize spam emails with 
+                        98%+ accuracy. Analyze your Gmail inbox and stay protected from phishing, 
+                        malware, and social engineering attacks.
+                    </p>
+                    
+                    <div class="hero-features mb-5">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="feature-item">
+                                    <i class="fas fa-brain text-white"></i>
+                                    <span class="text-white">AI-Powered Detection</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="feature-item">
+                                    <i class="fas fa-layer-group text-white"></i>
+                                    <span class="text-white">Multi-Category Analysis</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="feature-item">
+                                    <i class="fas fa-chart-line text-white"></i>
+                                    <span class="text-white">Risk Assessment</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="feature-item">
+                                    <i class="fas fa-envelope text-white"></i>
+                                    <span class="text-white">Gmail Integration</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="hero-actions">
+                        {% if current_user.is_authenticated %}
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg me-3">
+                            <i class="fas fa-tachometer-alt"></i> Go to Dashboard
+                        </a>
+                        <a href="{{ url_for('analyze_emails') }}" class="btn btn-outline-primary btn-lg">
+                            <i class="fas fa-search"></i> Analyze Emails
+                        </a>
+                        {% else %}
+                        <a href="{{ url_for('login') }}" class="btn btn-light btn-lg text-dark fw-bold d-inline-flex align-items-center justify-content-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="22" height="22"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 9.25c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 2.58 29.93 0 24 0 15.4 0 7.96 4.93 4.34 12.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg> Login with Google
+                        </a>
+                        <a href="#features" class="btn btn-dark btn-lg">
+                            <i class="fas fa-info-circle"></i> Learn More
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6">
+                <div class="hero-image">
+                    <div class="security-dashboard-preview">
+                        <div class="card shadow-lg">
+                            <div class="card-header bg-primary text-white">
+                                <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Spam Analysis</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-4">
+                                        <div class="stat-item">
+                                            <div class="stat-number text-success">87%</div>
+                                            <div class="stat-label">Safe</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="stat-item">
+                                            <div class="stat-number text-warning">8%</div>
+                                            <div class="stat-label">Marketing</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="stat-item">
+                                            <div class="stat-number text-danger">5%</div>
+                                            <div class="stat-label">Threats</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<section id="features" class="py-5">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-12 text-center mb-5">
+<h2 class="display-5 fw-bold">Comprehensive Email Protection</h2>
+<p class="lead">Advanced AI algorithms protect you from multiple types of email threats</p>
+            </div>
+        </div>
+        
+        <div class="row g-4 mb-5">
+            <div class="col-lg-4">
+                <div class="feature-card card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="fas fa-fish text-danger"></i>
+                        </div>
+                        <h4>Phishing Detection</h4>
+                        <p class="text-secondary">Identify sophisticated phishing attempts that try to steal your credentials and personal information.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="feature-card card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="fas fa-shield-virus text-warning"></i>
+                        </div>
+                        <h4>Malware Protection</h4>
+                        <p class="text-secondary">Detect emails containing malicious attachments or links that could compromise your system.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="feature-card card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="fas fa-user-secret text-info"></i>
+                        </div>
+                        <h4>Social Engineering</h4>
+                        <p class="text-secondary">Recognize social engineering attacks that manipulate emotions to trick you into sharing information.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="feature-card card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="fas fa-bullhorn text-secondary"></i>
+                        </div>
+                        <h4>Marketing Spam</h4>
+                        <p class="text-secondary">Filter out unwanted marketing emails and promotional content to keep your inbox clean.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="feature-card card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="fas fa-chart-bar text-success"></i>
+                        </div>
+                        <h4>Risk Assessment</h4>
+                        <p class="text-secondary">Get detailed risk scores and threat levels for each email to make informed decisions.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="feature-card card h-100 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="feature-icon">
+                            <i class="fas fa-sync text-primary"></i>
+                        </div>
+                        <h4>Real-time Analysis</h4>
+                        <p class="text-secondary">Instant analysis of your Gmail inbox with up-to-date threat intelligence and patterns.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How It Works Section -->
+<section class="py-5">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-12 text-center mb-5">
+                <h2 class="display-5 fw-bold">How It Works</h2>
+                <p class="lead">Simple 3-step process to secure your email</p>
+            </div>
+        </div>
+        
+        <div class="row g-4 mb-5">
+            <div class="col-lg-4">
+                <div class="step-card text-center">
+                    <div class="step-number">1</div>
+                    <h4>Connect Gmail</h4>
+                    <p>Securely connect your Gmail account using Google OAuth authentication.</p>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="step-card text-center">
+                    <div class="step-number">2</div>
+                    <h4>AI Analysis</h4>
+                    <p>Our advanced ML algorithms analyze your emails for various threat categories.</p>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="step-card text-center">
+                    <div class="step-number">3</div>
+                    <h4>Get Results</h4>
+                    <p>Receive detailed reports with risk scores and recommendations for each email.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-5">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-12 text-center py-4">
+                <h2 class="display-6 fw-bold mb-4">Ready to Protect Your Inbox?</h2>
+                <p class="lead mb-4">Join thousands of users who trust SpamProtection for their email security</p>
+                {% if not current_user.is_authenticated %}
+<a href="{{ url_for('login') }}" class="btn btn-light btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="22" height="22"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 9.25c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 2.58 29.93 0 24 0 15.4 0 7.96 4.93 4.34 12.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg> Get Started with Google
+                        </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

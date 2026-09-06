@@ -1,0 +1,1490 @@
+{% extends "base.html" %}
+
+{% block title %}Threat Console - SpamProtection{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ========================================
+   THREAT CONSOLE - MATCHES DASHBOARD/ANALYTICS
+   ======================================== */
+
+/* Subtitle styling - matches analytics */
+.threat-subtitle {
+    color: #495057;
+    font-size: 1rem;
+    font-weight: 400;
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.threat-subtitle i {
+    color: #0ea5e9;
+    font-size: 1.1rem;
+}
+
+/* Stat cards - matches analytics stat-card */
+.stat-card {
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+    height: 100%;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+}
+
+.stat-icon {
+    font-size: 2rem;
+    opacity: 0.9;
+}
+
+.stat-card .card-body {
+    padding: 1.25rem;
+}
+
+.stat-card h6 {
+    font-size: 0.8rem;
+    opacity: 0.9;
+}
+
+.stat-card h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+}
+
+/* Chart container - matches analytics */
+.chart-container {
+    position: relative;
+    height: 300px;
+}
+
+/* Tables - matches analytics */
+.table th {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* Risk badge - simplified */
+.risk-badge {
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-weight: 700;
+    font-size: 0.75rem;
+}
+
+.risk-badge.high {
+    background-color: #ef4444;
+    color: white;
+}
+
+.risk-badge.medium {
+    background-color: #f97316;
+    color: white;
+}
+
+.risk-badge.low {
+    background-color: #22c55e;
+    color: white;
+}
+
+/* Category badges - MATCHES RESULTS PAGE EXACTLY */
+.category-badge {
+    min-width: 85px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    border-radius: 6px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.category-badge.legitimate {
+    background-color: var(--color-legitimate);
+    color: white;
+}
+
+.category-badge.promotion {
+    background-color: var(--color-promotion);
+    color: white;
+}
+
+.category-badge.phishing {
+    background-color: var(--color-phishing);
+    color: #ffffff;
+    border: 2px solid var(--color-phishing);
+}
+
+.category-badge.malware {
+    background-color: var(--color-malware);
+    color: white;
+}
+
+.category-badge.newsletter {
+    background-color: var(--color-newsletter);
+    color: white;
+}
+
+.category-badge.spam {
+    background-color: var(--color-spam);
+    color: white;
+}
+
+/* Risk badges - MATCHES RESULTS PAGE EXACTLY */
+.risk-badge {
+    min-width: 85px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    border-radius: 6px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.risk-badge.high {
+    background-color: #ef4444;
+    color: white;
+}
+
+.risk-badge.medium {
+    background-color: #f97316;
+    color: #212529;
+}
+
+.risk-badge.low {
+    background-color: #22c55e;
+    color: white;
+}
+
+/* Risk level - simplified */
+.risk-level {
+    padding: 4px 10px;
+    border-radius: 15px;
+    font-weight: 600;
+    font-size: 0.75rem;
+}
+
+.risk-level.high {
+    background-color: #ef4444;
+    color: white;
+}
+
+.risk-level.medium {
+    background-color: #f97316;
+    color: white;
+}
+
+.risk-level.low {
+    background-color: #22c55e;
+    color: white;
+}
+
+/* Live indicator - simplified */
+.live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(40, 167, 69, 0.15);
+    border: 1px solid rgba(40, 167, 69, 0.3);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #28a745;
+}
+
+.live-dot {
+    width: 8px;
+    height: 8px;
+    background: #28a745;
+    border-radius: 50%;
+    animation: pulse-live 2s ease-in-out infinite;
+}
+
+@keyframes pulse-live {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+/* Last updated - simplified */
+.last-updated {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.last-updated i {
+    color: #0ea5e9;
+}
+
+/* Refresh button - matches dashboard */
+.refresh-btn {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    color: white;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.refresh-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+}
+
+.refresh-btn:active {
+    transform: translateY(0);
+}
+
+.refresh-btn.spinning i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Empty state - simplified */
+.empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #6c757d;
+}
+
+.empty-state i {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    font-size: 0.95rem;
+    margin: 0;
+}
+
+/* Card styling - matches dashboard/analytics */
+.card {
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: none;
+}
+
+.card-header {
+    border-radius: 10px 10px 0 0;
+    font-weight: 600;
+}
+
+/* Fade in animation - simplified */
+.fade-in-up {
+    animation: fadeInUp 0.4s ease-out forwards;
+    opacity: 0;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in-up:nth-child(1) { animation-delay: 0.05s; }
+.fade-in-up:nth-child(2) { animation-delay: 0.1s; }
+.fade-in-up:nth-child(3) { animation-delay: 0.15s; }
+.fade-in-up:nth-child(4) { animation-delay: 0.2s; }
+
+/* Timeline styling - light/dark mode compatible */
+.timeline-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.timeline-item {
+    display: flex;
+    align-items: flex-start;
+    padding: 14px 12px;
+    border-bottom: 1px solid #e9ecef;
+    transition: background-color 0.2s ease;
+    background-color: transparent;
+}
+
+.timeline-item:hover {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+.timeline-item:last-child {
+    border-bottom: none;
+}
+
+.timeline-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+/* Timeline icons - MATCHES RESULTS PAGE EXACT CATEGORY ICONS WITH FULL OPACITY */
+.timeline-icon.spam {
+    background-color: var(--color-spam);
+    color: #ffffff;
+}
+
+.timeline-icon.phishing {
+    background-color: var(--color-phishing);
+    color: #ffffff;
+}
+
+.timeline-icon.malware {
+    background-color: var(--color-malware);
+    color: #ffffff;
+}
+
+.timeline-icon.newsletter {
+    background-color: var(--color-newsletter);
+    color: #ffffff;
+}
+
+.timeline-icon.promotion {
+    background-color: var(--color-promotion);
+    color: #ffffff;
+}
+
+.timeline-icon.legitimate {
+    background-color: var(--color-legitimate);
+    color: #ffffff;
+}
+
+.timeline-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.timeline-subject {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #1e293b;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.timeline-time {
+    font-size: 0.72rem;
+    color: #94a3b8;
+    white-space: nowrap;
+    font-weight: 400;
+}
+
+/* Chart cards - DARK BACKGROUND for visibility (deprecated, kept for reference) */
+
+/* Mobile Responsive - matches analytics */
+@media (max-width: 767px) {
+    .threat-console-page {
+        padding: 0.75rem !important;
+    }
+    
+    .threat-console-page h2 {
+        font-size: 1.5rem;
+    }
+    
+    .threat-subtitle {
+        font-size: 0.9rem;
+    }
+    
+    /* Stack stat cards */
+    .stat-card {
+        margin-bottom: 0.75rem;
+    }
+    
+    .stat-card .card-body {
+        padding: 1rem;
+    }
+    
+    .stat-card h6 {
+        font-size: 0.7rem;
+    }
+    
+    .stat-card h2 {
+        font-size: 1.5rem;
+    }
+    
+    .stat-icon {
+        font-size: 1.5rem;
+    }
+    
+    /* Chart container for mobile */
+    .chart-container {
+        height: 250px;
+    }
+    
+    /* Mobile table styles */
+    .table {
+        font-size: 0.85rem;
+    }
+    
+    .table th, .table td {
+        padding: 0.5rem 0.25rem;
+        vertical-align: middle;
+    }
+    
+    /* Mobile card styles */
+    .card {
+        margin-bottom: 1rem;
+    }
+    
+    .card-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .card-header h5 {
+        font-size: 1rem;
+    }
+    
+    .card-body {
+        padding: 0.75rem;
+    }
+    
+    /* Header controls stack */
+    .threat-header-controls {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .threat-header-controls > * {
+        width: 100%;
+    }
+    
+    .refresh-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Timeline mobile */
+    .timeline-container {
+        max-height: 300px;
+    }
+    
+    .timeline-item {
+        padding: 10px;
+    }
+}
+
+/* Extra small mobile */
+@media (max-width: 480px) {
+    .stat-card h2 {
+        font-size: 1.25rem;
+    }
+    
+    .chart-container {
+        height: 200px;
+    }
+    
+    .risk-badge,
+    .category-badge,
+    .risk-level {
+        padding: 3px 8px;
+        font-size: 0.65rem;
+    }
+    
+    .timeline-meta {
+        flex-direction: column;
+        gap: 4px;
+    }
+}
+
+/* Smooth scrolling for mobile */
+@media (max-width: 767px) {
+    html {
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Reduce animation complexity on mobile */
+    .stat-card:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Faster animations on mobile */
+    .fade-in-up {
+        animation-duration: 0.3s;
+    }
+    
+    .stat-card {
+        transition: transform 0.15s ease;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .fade-in-up {
+        animation: none;
+        opacity: 1;
+    }
+    
+    .live-dot {
+        animation: none;
+    }
+    
+    .refresh-btn.spinning i {
+        animation: none;
+    }
+    
+    .stat-card:hover {
+        transform: none;
+    }
+}
+
+/* Table scroll wrapper */
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+
+.table-scroll::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}
+
+/* Timeline scrollbar */
+.timeline-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.timeline-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.timeline-container::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+.timeline-container::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}
+
+/* Dark mode overrides for timeline */
+@media (prefers-color-scheme: dark) {
+    .timeline-item {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .timeline-item:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+    .timeline-subject {
+        color: #ffffff;
+    }
+    .timeline-meta {
+        color: #e2e8f0;
+    }
+    .timeline-time {
+        color: #cbd5e1;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 threat-console-page">
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <div class="d-flex align-items-center gap-3">
+                        <h2><i class="fas fa-shield-virus"></i> Threat Console</h2>
+                        <span class="badge bg-primary fs-6 px-3 py-1">
+                            <i class="fas fa-clock"></i> Last 7 Days
+                        </span>
+                    </div>
+                    <p class="threat-subtitle fw-semibold">
+                        <i class="fas fa-database"></i>
+                        Real-time threat intelligence from emails received in the last 7 days
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Threat Metrics - matches analytics stat cards -->
+    <div class="row mb-4 g-3">
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card bg-primary text-white fade-in-up">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">Total Emails</h6>
+                            <h2 class="card-title mb-0" id="totalEmails">{{ threat_data.total_emails }}</h2>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-envelope"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card bg-danger text-white fade-in-up">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">Phishing Detected</h6>
+                            <h2 class="card-title mb-0" id="totalPhishing">{{ threat_data.total_phishing }}</h2>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-fish"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card text-white fade-in-up" style="background: linear-gradient(135deg, #6610f2 0%, #6f42c1 100%);">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">Malware Detected</h6>
+                            <h2 class="card-title mb-0" id="totalMalware">{{ threat_data.total_malware }}</h2>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-virus"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card {% if threat_data.high_risk_percentage|default(0) < 15 %}bg-success text-white{% elif threat_data.high_risk_percentage|default(0) < 40 %}bg-warning text-dark{% else %}bg-danger text-white{% endif %} fade-in-up">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">Risk Rate</h6>
+                            <h2 class="card-title mb-0" id="highRiskPercent">{{ threat_data.high_risk_percentage|default(0) }}%</h2>
+                            <small class="{% if threat_data.high_risk_percentage|default(0) < 15 %}text-white-50{% elif threat_data.high_risk_percentage|default(0) < 40 %}text-dark{% else %}text-white-50{% endif %}">
+                                {% if threat_data.high_risk_percentage|default(0) < 15 %}Low Risk{% elif threat_data.high_risk_percentage|default(0) < 40 %}Medium Risk{% else %}High Risk{% endif %}
+                            </small>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Distribution Chart -->
+    <div class="row mb-4 g-3">
+        <div class="col-12">
+            <div class="card h-100 fade-in-up">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Category Distribution</h5>
+                        <small>Email categories breakdown</small>
+                    </div>
+                    <span class="badge bg-light text-dark"><i class="fas fa-clock"></i> Last 7 Days</span>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 280px;">
+                        <canvas id="categoryDistChart"></canvas>
+                    </div>
+                    <div id="categoryDistLegend" class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Sections Row 1: Activity Timeline and Urgency Breakdown -->
+    <div class="row mb-4 g-3">
+        <!-- Threat Activity Timeline - IMPROVED HEADER COLOR -->
+        <div class="col-12 col-md-6">
+            <div class="card h-100 fade-in-up">
+                <div class="card-header text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);">
+                    <div>
+                        <h5 class="mb-0"><i class="fas fa-stream"></i> Threat Activity Timeline</h5>
+                        <small>Recent email received activity</small>
+                    </div>
+                    <span class="badge bg-light text-dark"><i class="fas fa-clock"></i> Last 7 Days</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if threat_data.activity_timeline %}
+                    <div class="timeline-container">
+                        {% for activity in threat_data.activity_timeline %}
+                        <div class="timeline-item">
+                            <div class="timeline-icon {{ activity.category }}">
+                                <i class="fas fa-{{ 'exclamation-triangle' if activity.category == 'spam' else 'skull-crossbones' if activity.category == 'phishing' else 'virus' if activity.category == 'malware' else 'newspaper' if activity.category == 'newsletter' else 'bullhorn' if activity.category == 'promotion' else 'check-circle' }}"></i>
+                            </div>
+                            <div class="timeline-content">
+                                <div class="timeline-subject">{{ activity.subject }}</div>
+                        <div class="timeline-meta">
+                                    {% set display_name = {
+                                        'legitimate': 'Not Spam',
+                                        'promotion': 'Promotion',
+                                        'phishing': 'Phishing',
+                                        'malware': 'Malware',
+                                        'newsletter': 'Newsletter',
+                                        'spam': 'Spam'
+                                    } %}
+                                    {% set risk_labels = {
+                                        'High': '🔴',
+                                        'Medium': '⚠️',
+                                        'Low': '🟢'
+                                    } %}
+                                    {% set risk_level = 'High' if activity.risk_score >= 61 else 'Medium' if activity.risk_score >= 41 else 'Low' %}
+                                    
+                                    <span class="category-badge {{ activity.category }}">{{ display_name.get(activity.category, activity.category.title()) }}</span>
+                                    <span class="risk-badge {{ risk_level.lower().replace(' ', '') }}">
+                                        {{ risk_labels.get(risk_level, '') }} Risk: {{ activity.risk_score }}
+                                    </span>
+                                    <span>{{ activity.sender }}</span>
+                                </div>
+                            </div>
+                            <div class="timeline-time">Received {{ activity.received_at_relative }}</div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <i class="fas fa-stream"></i>
+                        <p>No activity yet. Run analysis to see timeline.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Urgency Level Breakdown - CHANGED TO GRAPH -->
+        <div class="col-12 col-md-6">
+            <div class="card h-100 fade-in-up">
+                <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="fas fa-bolt"></i> Urgency Level Trend</h5>
+                        <small>Email urgency by received date</small>
+                    </div>
+                    <span class="badge bg-light text-dark"><i class="fas fa-clock"></i> Last 7 Days</span>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 280px;">
+                        <canvas id="urgencyTrendChart"></canvas>
+                    </div>
+                    <div id="urgencyTrendLegend" class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Sections Row 2: Risk Distribution and Category Trend -->
+    <div class="row mb-4 g-3">
+        <!-- Risk Score Distribution - CHANGED TO GRAPH -->
+        <div class="col-12 col-md-6">
+            <div class="card h-100 fade-in-up">
+                <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Risk Score Distribution</h5>
+                        <small>Risk scores by received date</small>
+                    </div>
+                    <span class="badge bg-light text-dark"><i class="fas fa-clock"></i> Last 7 Days</span>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 280px;">
+                        <canvas id="riskDistChart"></canvas>
+                    </div>
+                    <div id="riskDistLegend" class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Category Trend Over Time - CHANGED TO SINGLE LINE -->
+        <div class="col-12 col-md-6">
+            <div class="card h-100 fade-in-up">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="fas fa-chart-line"></i> Category Trend</h5>
+                        <small>Email categories by received date</small>
+                    </div>
+                    <span class="badge bg-light text-dark"><i class="fas fa-clock"></i> Last 7 Days</span>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 280px;">
+                        <canvas id="categoryTrendChart"></canvas>
+                    </div>
+                    <div id="categoryTrendLegend" class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ========================================
+// THREAT CONSOLE - DYNAMIC UPDATES
+// ========================================
+
+// Chart instances
+let categoryDistChart = null;
+let categoryTrendChart = null;
+let urgencyTrendChart = null;
+let riskDistChart = null;
+
+// Initialize charts - matches analytics chart styling
+function initCharts() {
+    // CATEGORY_COLORS - Single source of truth matching CSS variables
+    const CATEGORY_COLORS = {
+        legitimate: '#22c55e',
+        spam: '#ef4444',
+        phishing: '#ff0800',
+        malware: '#6f42c1',
+        promotion: '#f97316',
+        newsletter: '#0ea5e9'
+    };
+
+    function hexToRgba(hex, alpha) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    // Category Distribution Doughnut Chart - dynamically sorted, 12 o'clock start
+    const rawLabels = {{ threat_data.chart_labels|default([]) | tojson | safe }};
+    const rawData = {{ threat_data.chart_data|default([]) | tojson | safe }};
+
+    // Sort descending by count, keep 0% slices, labels stay in sync
+    const sorted = rawLabels.map((l, i) => ({ label: l, count: rawData[i] || 0 }))
+                            .sort((a, b) => b.count - a.count);
+
+    const labels = sorted.map(s => s.label);
+    const data = sorted.map(s => s.count);
+
+    const labelColorMap = {
+        'Not Spam': CATEGORY_COLORS.legitimate,
+        'Spam': CATEGORY_COLORS.spam,
+        'Phishing': CATEGORY_COLORS.phishing,
+        'Malware': CATEGORY_COLORS.malware,
+        'Promotion': CATEGORY_COLORS.promotion,
+        'Newsletter': CATEGORY_COLORS.newsletter
+    };
+
+    const ctx = document.getElementById('categoryDistChart').getContext('2d');
+    categoryDistChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels,
+            datasets: [{
+                data,
+                backgroundColor: labels.map(l => hexToRgba(labelColorMap[l] || '#888', 1)),
+                borderColor: labels.map(l => hexToRgba(labelColorMap[l] || '#888', 1)),
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            rotation: 0,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: false,
+                    external: function(context) {
+                        let el = document.getElementById('distTooltip');
+                        if (!el) {
+                            el = document.createElement('div');
+                            el.id = 'distTooltip';
+                            el.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:10px 14px;border-radius:8px;font-size:0.85rem;pointer-events:none;opacity:0;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.2s ease';
+                            document.body.appendChild(el);
+                        }
+                        const tooltip = context.tooltip;
+                        if (tooltip.opacity === 0 || !tooltip.dataPoints || tooltip.dataPoints.length === 0) {
+                            el.style.opacity = '0';
+                            return;
+                        }
+                        const dp = tooltip.dataPoints[0];
+                        const label = dp.label;
+                        const count = dp.parsed || 0;
+
+                        const donutIcons = {
+                            'Not Spam': { icon: 'check-circle', color: '#22c55e' },
+                            'Spam': { icon: 'exclamation-triangle', color: '#ef4444' },
+                            'Phishing': { icon: 'skull-crossbones', color: '#ff0800' },
+                            'Malware': { icon: 'virus', color: '#6f42c1' },
+                            'Promotion': { icon: 'bullhorn', color: '#f97316' },
+                            'Newsletter': { icon: 'newspaper', color: '#0ea5e9' }
+                        };
+                        const info = donutIcons[label] || { icon: 'tag', color: '#888' };
+
+                        el.innerHTML = `<div style="margin:3px 0;"><i class="fas fa-${info.icon}" style="color:${info.color};width:18px;text-align:center;margin-right:6px;"></i>${label}: ${count} emails</div>`;
+                        requestAnimationFrame(() => {
+                            el.style.opacity = '1';
+                        });
+
+                        const pos = context.chart.canvas.getBoundingClientRect();
+                        let left = pos.left + tooltip.caretX + 12;
+                        let top = pos.top + tooltip.caretY - 10;
+                        if (left + el.offsetWidth > window.innerWidth - 10) left = pos.left + tooltip.caretX - el.offsetWidth - 12;
+                        if (top < 0) top = 0;
+                        el.style.left = left + 'px';
+                        el.style.top = top + 'px';
+                    }
+                }
+            }
+        }
+    });
+
+    // Custom FA icon legend for donut chart
+    const legendEl = document.getElementById('categoryDistLegend');
+    const legendIcons = {
+        'Not Spam': { icon: 'check-circle', color: '#22c55e' },
+        'Spam': { icon: 'exclamation-triangle', color: '#ef4444' },
+        'Phishing': { icon: 'skull-crossbones', color: '#ff0800' },
+        'Malware': { icon: 'virus', color: '#6f42c1' },
+        'Promotion': { icon: 'bullhorn', color: '#f97316' },
+        'Newsletter': { icon: 'newspaper', color: '#0ea5e9' }
+    };
+    if (legendEl) {
+        legendEl.innerHTML = labels.map(l => {
+            const info = legendIcons[l] || { icon: 'tag', color: '#888' };
+            return `<span><i class="fas fa-${info.icon}" style="color:${info.color};width:18px;text-align:center;margin-right:4px;"></i> ${l}</span>`;
+        }).join('');
+    }
+
+    // Locale-aware chart date formatter
+    function fmtChartDate(dateStr) {
+        return new Date(dateStr + 'T00:00:00').toLocaleDateString(navigator.language, { day: 'numeric', month: 'short' });
+    }
+
+    // Category Trend - SINGLE LINE CHART with tooltips
+    const trendDates = {{ threat_data.category_trend_dates|default([]) | tojson | safe }};
+    const trendDataObj = {{ threat_data.category_trend_data|default({}) | tojson | safe }};
+
+    // Calculate total emails per day for single line
+    const totalByDay = trendDates.map((date, i) => {
+        return (trendDataObj.legitimate?.[i] || 0) +
+               (trendDataObj.spam?.[i] || 0) +
+               (trendDataObj.phishing?.[i] || 0) +
+               (trendDataObj.malware?.[i] || 0) +
+               (trendDataObj.promotion?.[i] || 0) +
+               (trendDataObj.newsletter?.[i] || 0);
+    });
+
+    const trendAreaCtx = document.getElementById('categoryTrendChart').getContext('2d');
+    categoryTrendChart = new Chart(trendAreaCtx, {
+        type: 'line',
+        data: {
+            labels: trendDates,
+            datasets: [{
+                label: 'Total Emails',
+                data: totalByDay,
+                borderColor: 'rgba(14, 165, 233, 1)',
+                backgroundColor: 'rgba(14, 165, 233, 0.2)',
+                fill: true,
+                tension: 0.4,
+                borderWidth: 3,
+                pointBackgroundColor: 'rgba(14, 165, 233, 1)',
+                pointBorderColor: '#fff',
+                pointRadius: 5,
+                pointHoverRadius: 7
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: false,
+                    external: function(context) {
+                        let el = document.getElementById('chartTooltip');
+                        if (!el) {
+                            el = document.createElement('div');
+                            el.id = 'chartTooltip';
+                            el.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:10px 14px;border-radius:8px;font-size:0.85rem;pointer-events:none;opacity:0;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.2s ease, left 0.12s ease, top 0.12s ease';
+                            document.body.appendChild(el);
+                        }
+                        const tooltip = context.tooltip;
+                        if (tooltip.opacity === 0 || !tooltip.dataPoints || tooltip.dataPoints.length === 0) {
+                            el.style.opacity = '0';
+                            return;
+                        }
+                        const dp = tooltip.dataPoints[0];
+                        const dateIndex = dp.dataIndex;
+                        const date = tooltip.title[0];
+                        const formattedDate = fmtChartDate(date);
+
+                        if (el.dataset.prevDate && el.dataset.prevDate !== date) {
+                            el.style.opacity = '0.3';
+                        }
+                        el.dataset.prevDate = date;
+
+                        const catConfig = [
+                            { key: 'legitimate', name: 'Not Spam', icon: 'check-circle', color: '#22c55e' },
+                            { key: 'spam', name: 'Spam', icon: 'exclamation-triangle', color: '#ef4444' },
+                            { key: 'phishing', name: 'Phishing', icon: 'skull-crossbones', color: '#ff0800' },
+                            { key: 'malware', name: 'Malware', icon: 'virus', color: '#6f42c1' },
+                            { key: 'promotion', name: 'Promotion', icon: 'bullhorn', color: '#f97316' },
+                            { key: 'newsletter', name: 'Newsletter', icon: 'newspaper', color: '#0ea5e9' }
+                        ];
+
+                        let html = `<div style="font-weight:700;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:5px;">${formattedDate}</div>`;
+                        for (const c of catConfig) {
+                            const count = trendDataObj[c.key]?.[dateIndex] || 0;
+                            if (count > 0) {
+                                html += `<div style="margin:3px 0;"><i class="fas fa-${c.icon}" style="color:${c.color};width:18px;text-align:center;margin-right:6px;"></i>${c.name}: ${count}</div>`;
+                            }
+                        }
+                        html += `<div style="margin:3px 0;padding-top:4px;border-top:1px solid rgba(255,255,255,0.15);"><i class="fas fa-envelope" style="color:#14b8a6;width:18px;text-align:center;margin-right:6px;"></i>Total: ${totalByDay[dateIndex]}</div>`;
+
+                        el.innerHTML = html;
+                        requestAnimationFrame(() => {
+                            el.style.opacity = '1';
+                        });
+
+                        const pos = context.chart.canvas.getBoundingClientRect();
+                        let left = pos.left + tooltip.caretX + 12;
+                        let top = pos.top + tooltip.caretY - 10;
+                        if (left + el.offsetWidth > window.innerWidth - 10) left = pos.left + tooltip.caretX - el.offsetWidth - 12;
+                        if (top < 0) top = 0;
+                        el.style.left = left + 'px';
+                        el.style.top = top + 'px';
+                    }
+                }
+            },
+            skipNull: false,
+            barPercentage: 0.8,
+            categoryPercentage: 0.9,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Received Date'
+                    },
+                    stacked: false,
+                    ticks: {
+                        callback: function(v, i) { return fmtChartDate(trendDates[i]); }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    },
+                    title: {
+                        display: true,
+                        text: 'Email Count'
+                    },
+                    stacked: false
+                }
+            }
+        }
+    });
+
+    // Custom FA icon legend for category trend chart
+    const trendLegendEl = document.getElementById('categoryTrendLegend');
+    const trendLegendIcons = [
+        { label: 'Total Emails', icon: 'envelope', color: '#14b8a6' },
+        { key: 'legitimate', name: 'Not Spam', icon: 'check-circle', color: '#22c55e' },
+        { key: 'spam', name: 'Spam', icon: 'exclamation-triangle', color: '#ef4444' },
+        { key: 'phishing', name: 'Phishing', icon: 'skull-crossbones', color: '#ff0800' },
+        { key: 'malware', name: 'Malware', icon: 'virus', color: '#6f42c1' },
+        { key: 'promotion', name: 'Promotion', icon: 'bullhorn', color: '#f97316' },
+        { key: 'newsletter', name: 'Newsletter', icon: 'newspaper', color: '#0ea5e9' }
+    ];
+    if (trendLegendEl) {
+        trendLegendEl.innerHTML = trendLegendIcons.map(c =>
+            `<span><i class="fas fa-${c.icon}" style="color:${c.color};width:18px;text-align:center;margin-right:4px;"></i> ${c.name || c.label}</span>`
+        ).join('');
+    }
+
+    // Urgency Trend Chart - GROUPED BAR CHART (side-by-side bars)
+    const urgencyDates = {{ threat_data.urgency_trend_dates|default([]) | tojson | safe }};
+    const urgencyData = {{ threat_data.urgency_trend_data|default({}) | tojson | safe }};
+
+    const urgencyCtx = document.getElementById('urgencyTrendChart').getContext('2d');
+    urgencyTrendChart = new Chart(urgencyCtx, {
+        type: 'bar',
+        data: {
+            labels: urgencyDates,
+            datasets: [
+                {
+                    label: 'High Urgency',
+                    data: urgencyData.High || [],
+                    backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                    borderColor: 'rgba(220, 53, 69, 1)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Medium Urgency',
+                    data: urgencyData.Medium || [],
+                    backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                    borderColor: 'rgba(255, 193, 7, 1)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Low Urgency',
+                    data: urgencyData.Low || [],
+                    backgroundColor: 'rgba(40, 167, 69, 0.8)',
+                    borderColor: 'rgba(40, 167, 69, 1)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: false,
+                    external: function(context) {
+                        let el = document.getElementById('urgencyTooltip');
+                        if (!el) {
+                            el = document.createElement('div');
+                            el.id = 'urgencyTooltip';
+                            el.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:10px 14px;border-radius:8px;font-size:0.85rem;pointer-events:none;opacity:0;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.2s ease, left 0.12s ease, top 0.12s ease';
+                            document.body.appendChild(el);
+                        }
+                        const tooltip = context.tooltip;
+                        if (tooltip.opacity === 0 || !tooltip.dataPoints || tooltip.dataPoints.length === 0) {
+                            el.style.opacity = '0';
+                            return;
+                        }
+                        const date = tooltip.title[0];
+                        const formattedDate = fmtChartDate(date);
+                        if (el.dataset.prevDate && el.dataset.prevDate !== date) {
+                            el.style.opacity = '0.3';
+                        }
+                        el.dataset.prevDate = date;
+
+                        const urgencyConfig = [
+                            { label: 'High Urgency', icon: 'exclamation-circle', color: '#ef4444' },
+                            { label: 'Medium Urgency', icon: 'clock', color: '#f97316' },
+                            { label: 'Low Urgency', icon: 'check-circle', color: '#22c55e' }
+                        ];
+
+                        let html = `<div style="font-weight:700;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:5px;">${formattedDate}</div>`;
+                        for (const u of urgencyConfig) {
+                            const dp = tooltip.dataPoints.find(d => d.dataset.label === u.label);
+                            if (dp && dp.parsed.y > 0) {
+                                html += `<div style="margin:3px 0;"><i class="fas fa-${u.icon}" style="color:${u.color};width:18px;text-align:center;margin-right:6px;"></i>${u.label}: ${dp.parsed.y} emails</div>`;
+                            }
+                        }
+
+                        el.innerHTML = html;
+                        requestAnimationFrame(() => {
+                            el.style.opacity = '1';
+                        });
+
+                        const pos = context.chart.canvas.getBoundingClientRect();
+                        let left = pos.left + tooltip.caretX + 12;
+                        let top = pos.top + tooltip.caretY - 10;
+                        if (left + el.offsetWidth > window.innerWidth - 10) left = pos.left + tooltip.caretX - el.offsetWidth - 12;
+                        if (top < 0) top = 0;
+                        el.style.left = left + 'px';
+                        el.style.top = top + 'px';
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Received Date'
+                    },
+                    stacked: true,
+                    ticks: {
+                        callback: function(v, i) { return fmtChartDate(urgencyDates[i]); }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    },
+                    title: {
+                        display: true,
+                        text: 'Email Count'
+                    },
+                    stacked: true
+                }
+            }
+        }
+    });
+
+    // Custom FA icon legend for urgency trend chart
+    const urgencyLegendEl = document.getElementById('urgencyTrendLegend');
+    const urgencyLegendIcons = [
+        { label: 'High Urgency', icon: 'exclamation-circle', color: '#ef4444' },
+        { label: 'Medium Urgency', icon: 'clock', color: '#f97316' },
+        { label: 'Low Urgency', icon: 'check-circle', color: '#22c55e' }
+    ];
+    const urgencyTotals = Object.fromEntries(
+        [['High Urgency', urgencyData.High], ['Medium Urgency', urgencyData.Medium], ['Low Urgency', urgencyData.Low]]
+            .map(([k, v]) => [k, v ? v.reduce((a, b) => a + b, 0) : 0])
+    );
+    if (urgencyLegendEl) {
+        urgencyLegendEl.innerHTML = urgencyLegendIcons.map(u => {
+            const t = urgencyTotals[u.label];
+            return `<span style="${t === 0 ? 'opacity:0.5' : ''}"><i class="fas fa-${u.icon}" style="color:${u.color};width:18px;text-align:center;margin-right:4px;"></i> ${u.label}: ${t} emails</span>`;
+        }).join('');
+    }
+
+    // Risk Distribution Chart - ✅ GROUPED BAR CHART (No more overlapping noisy lines)
+    const riskDates = {{ threat_data.risk_dist_dates|default([]) | tojson | safe }};
+    const riskData = {{ threat_data.risk_dist_data|default({}) | tojson | safe }};
+
+    const riskCtx = document.getElementById('riskDistChart').getContext('2d');
+    riskDistChart = new Chart(riskCtx, {
+        type: 'bar',
+        data: {
+            labels: riskDates,
+            datasets: [
+                {
+                    label: 'Low (0-40)',
+                    data: riskData['0-40'] || [],
+                    backgroundColor: 'rgba(40, 167, 69, 0.8)',
+                    borderColor: '#28a745',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'Medium (41-60)',
+                    data: riskData['41-60'] || [],
+                    backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                    borderColor: '#ffc107',
+                    borderWidth: 2,
+                    borderRadius: 4
+                },
+                {
+                    label: 'High (61-100)',
+                    data: riskData['61-100'] || [],
+                    backgroundColor: 'rgba(220, 53, 69, 0.8)',
+                    borderColor: '#dc3545',
+                    borderWidth: 2,
+                    borderRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    enabled: false,
+                    external: function(context) {
+                        let el = document.getElementById('riskTooltip');
+                        if (!el) {
+                            el = document.createElement('div');
+                            el.id = 'riskTooltip';
+                            el.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:10px 14px;border-radius:8px;font-size:0.85rem;pointer-events:none;opacity:0;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.2s ease, left 0.12s ease, top 0.12s ease';
+                            document.body.appendChild(el);
+                        }
+                        const tooltip = context.tooltip;
+                        if (tooltip.opacity === 0 || !tooltip.dataPoints || tooltip.dataPoints.length === 0) {
+                            el.style.opacity = '0';
+                            return;
+                        }
+                        const date = tooltip.title[0];
+                        const formattedDate = fmtChartDate(date);
+                        if (el.dataset.prevDate && el.dataset.prevDate !== date) {
+                            el.style.opacity = '0.3';
+                        }
+                        el.dataset.prevDate = date;
+
+                        const riskConfig = [
+                            { label: 'Low (0-40)', icon: 'shield-alt', color: '#22c55e' },
+                            { label: 'Medium (41-60)', icon: 'exclamation-triangle', color: '#f97316' },
+                            { label: 'High (61-100)', icon: 'bolt', color: '#ef4444' }
+                        ];
+
+                        let html = `<div style="font-weight:700;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:5px;">${formattedDate}</div>`;
+                        for (const r of riskConfig) {
+                            const dp = tooltip.dataPoints.find(d => d.dataset.label === r.label);
+                            if (dp && dp.parsed.y > 0) {
+                                html += `<div style="margin:3px 0;"><i class="fas fa-${r.icon}" style="color:${r.color};width:18px;text-align:center;margin-right:6px;"></i>${r.label}: ${dp.parsed.y} emails</div>`;
+                            }
+                        }
+
+                        el.innerHTML = html;
+                        requestAnimationFrame(() => {
+                            el.style.opacity = '1';
+                        });
+
+                        const pos = context.chart.canvas.getBoundingClientRect();
+                        let left = pos.left + tooltip.caretX + 12;
+                        let top = pos.top + tooltip.caretY - 10;
+                        if (left + el.offsetWidth > window.innerWidth - 10) left = pos.left + tooltip.caretX - el.offsetWidth - 12;
+                        if (top < 0) top = 0;
+                        el.style.left = left + 'px';
+                        el.style.top = top + 'px';
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Received Date'
+                    },
+                    stacked: true,
+                    ticks: {
+                        callback: function(v, i) { return fmtChartDate(riskDates[i]); }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    },
+                    title: {
+                        display: true,
+                        text: 'Email Count'
+                    },
+                    stacked: true
+                }
+            }
+        }
+    });
+
+    // Custom FA icon legend for risk dist chart
+    const riskLegendEl = document.getElementById('riskDistLegend');
+    const riskLegendIcons = [
+        { label: 'Low (0-40)', icon: 'shield-alt', color: '#22c55e' },
+        { label: 'Medium (41-60)', icon: 'exclamation-triangle', color: '#f97316' },
+        { label: 'High (61-100)', icon: 'bolt', color: '#ef4444' }
+    ];
+    const riskTotals = Object.fromEntries(
+        [['Low (0-40)', riskData['0-40']], ['Medium (41-60)', riskData['41-60']], ['High (61-100)', riskData['61-100']]]
+            .map(([k, v]) => [k, v ? v.reduce((a, b) => a + b, 0) : 0])
+    );
+    if (riskLegendEl) {
+        riskLegendEl.innerHTML = riskLegendIcons.map(r => {
+            const t = riskTotals[r.label];
+            return `<span style="${t === 0 ? 'opacity:0.5' : ''}"><i class="fas fa-${r.icon}" style="color:${r.color};width:18px;text-align:center;margin-right:4px;"></i> ${r.label}: ${t} emails</span>`;
+        }).join('');
+    }
+}
+
+// Toast notification - matches flash message styling in base.html
+function showToast(message, type = 'info') {
+    // Map type to match flash message icons
+    const iconMap = {
+        'success': 'check-circle',
+        'danger': 'skull-crossbones',
+        'error': 'exclamation-triangle',
+        'warning': 'exclamation-triangle',
+        'info': 'info-circle'
+    };
+    
+    // Create toast element matching flash-alert styling
+    const toast = document.createElement('div');
+    const alertType = type === 'error' ? 'danger' : type;
+    toast.className = `flash-alert alert alert-${alertType} alert-dismissible fade show`;
+    toast.setAttribute('role', 'alert');
+    toast.style.cssText = 'position: fixed; top: 70px; right: 20px; z-index: 9999; min-width: 280px; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,0.15);';
+    toast.innerHTML = `
+        <i class="fas fa-${iconMap[type] || 'info-circle'} me-2"></i>
+        <span class="flash-message-text">${message}</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Auto remove after 5 seconds (matches flash messages)
+    setTimeout(() => {
+        if (toast.parentNode) {
+            const bsAlert = new bootstrap.Alert(toast);
+            bsAlert.close();
+        }
+    }, 5000);
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    initCharts();
+});
+</script>
+{% endblock %}

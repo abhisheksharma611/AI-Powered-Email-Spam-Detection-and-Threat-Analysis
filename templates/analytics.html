@@ -1,0 +1,921 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - SpamProtection{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Analytics Dashboard Styles */
+    .analytics-subtitle {
+        color: #495057;
+        font-size: 1rem;
+        font-weight: 400;
+        margin-top: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .analytics-subtitle i {
+        color: #0ea5e9;
+        font-size: 1.1rem;
+    }
+    
+    .stat-card {
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+        height: 100%;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-icon {
+        font-size: 2rem;
+        opacity: 0.9;
+    }
+    .stat-card .card-body {
+        padding: 1.25rem;
+    }
+    .stat-card h6 {
+        font-size: 0.8rem;
+        opacity: 0.9;
+    }
+    .stat-card h2 {
+        font-size: 1.75rem;
+        font-weight: 700;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+    .urgency-badge {
+        padding: 5px 10px;
+        border-radius: 15px;
+        font-weight: 700;
+        font-size: 0.75rem;
+    }
+    .urgency-high {
+        background-color: #dc3545;
+        color: white;
+    }
+    .urgency-medium {
+        background-color: #ffc107;
+        color: black;
+    }
+    .urgency-low {
+        background-color: #28a745;
+        color: white;
+    }
+    .risk-low { background-color: #28a745; }
+    .risk-medium { background-color: #ffc107; }
+    .risk-high { background-color: #dc3545; }
+    
+    /* Purple/Blue gradient theme for card headers */
+    .card-header-theme {
+        background: linear-gradient(135deg, #6610f2 0%, #0ea5e9 100%) !important;
+        color: white;
+    }
+    
+    .daily-risk-card {
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        transition: transform 0.2s;
+    }
+    
+    .daily-risk-card:hover {
+        transform: translateY(-3px);
+    }
+    
+    .daily-risk-bar {
+        height: 8px;
+        border-radius: 4px;
+        width: 100%;
+    }
+
+    /* Match refresh button styling from Threat Console */
+    .refresh-btn {
+        background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+        border: none;
+        border-radius: 8px;
+        padding: 8px 16px;
+        color: white;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+
+    .refresh-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+    }
+
+    .refresh-btn:active {
+        transform: translateY(0);
+    }
+
+    .refresh-btn.spinning i {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    /* Last updated styling */
+    .last-updated {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 20px;
+        padding: 5px 12px;
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+
+    .last-updated i {
+        color: #0ea5e9;
+    }
+    
+    /* Mobile Responsive Styles */
+    @media (max-width: 767px) {
+        .analytics-page {
+            padding: 0.75rem !important;
+        }
+        
+        .analytics-page h2 {
+            font-size: 1.5rem;
+        }
+        
+        .analytics-subtitle {
+            font-size: 0.9rem;
+        }
+        
+        /* Stack stat cards */
+        .stat-card {
+            margin-bottom: 0.75rem;
+        }
+        
+        .stat-card .card-body {
+            padding: 1rem;
+        }
+        
+        .stat-card h6 {
+            font-size: 0.7rem;
+        }
+        
+        .stat-card h2 {
+            font-size: 1.5rem;
+        }
+        
+        .stat-icon {
+            font-size: 1.5rem;
+        }
+        
+        /* Chart container for mobile */
+        .chart-container {
+            height: 250px;
+        }
+        
+        /* Mobile table styles */
+        .table {
+            font-size: 0.85rem;
+        }
+        
+        .table th, .table td {
+            padding: 0.5rem 0.25rem;
+            vertical-align: middle;
+        }
+        
+        .table .progress {
+            min-width: 60px;
+            height: 16px;
+        }
+        
+        /* Mobile card styles */
+        .card {
+            margin-bottom: 1rem;
+        }
+        
+        .card-header {
+            padding: 0.75rem 1rem;
+        }
+        
+        .card-header h5 {
+            font-size: 1rem;
+        }
+        
+        .card-header small {
+            font-size: 0.75rem;
+        }
+        
+        .card-body {
+            padding: 0.75rem;
+        }
+    }
+    
+    /* Extra small mobile */
+    @media (max-width: 480px) {
+        .stat-card h2 {
+            font-size: 1.25rem;
+        }
+        
+        .chart-container {
+            height: 200px;
+        }
+        
+        .urgency-badge {
+            padding: 3px 8px;
+            font-size: 0.65rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 analytics-page">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="d-flex align-items-center gap-3">
+                        <h2><i class="fas fa-chart-bar"></i> Analytics Dashboard</h2>
+                        <span class="badge bg-primary fs-6 px-3 py-1">
+                            <i class="fas fa-list"></i> Last Scan
+                        </span>
+                    </div>
+                    <p class="analytics-subtitle">
+                        <i class="fas fa-shield-alt"></i>
+                        Email classification and urgency analysis from the last scan
+                    </p>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="last-updated">
+                        <i class="fas fa-clock"></i> Last scan: <span class="utc-date" data-utc="{{ analytics.last_scan_time_utc }}">{{ analytics.last_scan_time }}</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4 g-3">
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">Total Emails</h6>
+                            <h2 class="card-title mb-0" id="totalEmails">{{ analytics.total_count }}</h2>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-envelope"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">Average Urgency</h6>
+                            <h2 class="card-title mb-0" id="avgUrgency">{{ analytics.avg_urgency }}</h2>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-bolt"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card bg-danger text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">High Urgency Count</h6>
+                            <h2 class="card-title mb-0" id="highUrgencyCount">{{ analytics.high_urgency_count }}</h2>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-sm-6 col-md-3">
+            <div class="card stat-card bg-{{ analytics.risk_badge_color }} text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div id="riskLevelBlock">
+                            <h6 class="card-subtitle mb-2">Inbox Risk Level</h6>
+                            <h2 class="card-title mb-0" id="riskLevel">{{ analytics.risk_level }}</h2>
+                            <small>{{ analytics.risk_percentage|default(0) }}%</small>
+                        </div>
+                        <div class="stat-icon">
+                            <i class="fas fa-shield-alt"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4 g-3">
+        <!-- Risk Distribution Bar Chart -->
+        <div class="col-12 col-md-6">
+            <div class="card h-100" style="border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                <div class="card-header card-header-theme">
+                    <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Risk Distribution</h5>
+                    <small>Emails by risk level (Low: 0-40, Medium: 41-60, High: 61-100)</small>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center mb-3">
+                        <div class="col-4">
+                            <div class="p-3 bg-success text-white rounded" style="box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h3 class="mb-0">{{ analytics.risk_distribution.Low }}</h3>
+                                <small>Low Risk</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-3 bg-warning text-dark rounded" style="box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h3 class="mb-0">{{ analytics.risk_distribution.Medium }}</h3>
+                                <small>Medium Risk</small>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="p-3 bg-danger text-white rounded" style="box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                                <h3 class="mb-0">{{ analytics.risk_distribution.High }}</h3>
+                                <small>High Risk</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="riskDistributionChart"></canvas>
+                    </div>
+                    <div id="riskDistLegend" class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Category Breakdown Pie Chart -->
+        <div class="col-12 col-md-6">
+            <div class="card h-100" style="border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                <div class="card-header card-header-theme">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Category Breakdown</h5>
+                    <small>Distribution of emails by category</small>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 280px;">
+                        <canvas id="categoryPieChart"></canvas>
+                    </div>
+                    <div id="categoryPieLegend" class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Risk Trend Line Chart -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card" style="border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                <div class="card-header card-header-theme">
+                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Risk Trend</h5>
+                    <small>Average risk score per day</small>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="riskTrendChart"></canvas>
+                    </div>
+                    <div id="riskTrendLegend" class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:0.85rem;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top 5 High Urgency Emails -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header card-header-theme d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-circle"></i> Top 5 Highest Urgency Emails</h5>
+                    <span class="badge bg-light text-dark fs-6 px-3 py-1"><i class="fas fa-clock"></i> Last 7 Days</span>
+                </div>
+                <div class="card-body">
+                    {% if analytics.top_5_high_urgency %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>#</th>
+                                    <th>Subject</th>
+                                    <th>Sender</th>
+                                    <th>Category</th>
+                                    <th>Urgency Score</th>
+                                    <th>Urgency Level</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for email in analytics.top_5_high_urgency %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ email.subject|truncate(50) if email.subject else 'N/A' }}</td>
+                                    <td>{{ email.sender|truncate(30) if email.sender else 'N/A' }}</td>
+                                    <td>
+                                        <span class="category-{{ email.category }}">
+                                            <i class="fas fa-tag"></i> {{ 'Not Spam' if email.category == 'legitimate' else email.category|title }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="progress" style="height: 20px; min-width: 100px;">
+                                            <div class="progress-bar bg-{{ 'danger' if email.urgency_score >= 70 else 'warning' if email.urgency_score >= 40 else 'success' }}" role="progressbar"
+                                                 style="width: {{ email.urgency_score }}%">
+                                                {{ email.urgency_score }}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="urgency-badge urgency-{{ email.urgency_level|lower }}">
+                                            {{ email.urgency_level }}
+                                        </span>
+                                    </td>
+                                    <td><span class="utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> No high urgency emails found.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Statistics Table -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header card-header-theme">
+                    <h5 class="mb-0"><i class="fas fa-list"></i> Category Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Count</th>
+                                    <th>Percentage</th>
+                                    <th>Visual</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% set total = analytics.total_count %}
+                                {% for category, count in analytics.category_counts.items() %}
+                                <tr>
+                                    <td>
+                                        <span class="category-{{ category }}">
+                                            <i class="fas fa-tag"></i> {{ 'Not Spam' if category == 'legitimate' else category|title }}
+                                        </span>
+                                    </td>
+                                    <td>{{ count }}</td>
+                                    <td>{{ "%.1f"|format((count / total * 100) if total > 0 else 0) }}%</td>
+                                    <td>
+                                        <div class="progress" style="height: 20px; min-width: 100px;">
+                                            <div class="progress-bar bg-{{ 'spam' if category == 'spam' else 'legitimate' if category == 'legitimate' else 'promotion' if category == 'promotion' else 'phishing' if category == 'phishing' else 'malware' if category == 'malware' else 'newsletter' }}" 
+                                                 role="progressbar" 
+                                                 style="width: {{ (count / total * 100) if total > 0 else 0 }}%">
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+    // Auto-refresh when page is shown (e.g., user navigates back after analysis)
+    window.addEventListener('pageshow', function(event) {
+        // If the page is being shown from the back/forward cache, refresh it
+        if (event.persisted) {
+            window.location.reload();
+        }
+    });
+    
+
+
+    // Toast notification - matches flash message styling
+    function showToast(message, type = 'info') {
+        // Map type to match flash message icons
+        const iconMap = {
+            'success': 'check-circle',
+            'danger': 'skull-crossbones',
+            'error': 'exclamation-triangle',
+            'warning': 'exclamation-triangle',
+            'info': 'info-circle'
+        };
+        
+        // Create toast element matching flash-alert styling
+        const toast = document.createElement('div');
+        const alertType = type === 'error' ? 'danger' : type;
+        toast.className = `flash-alert alert alert-${alertType} alert-dismissible fade show`;
+        toast.setAttribute('role', 'alert');
+        toast.style.cssText = 'position: fixed; top: 80px; right: 20px; z-index: 9999; min-width: 280px; max-width: 90vw; box-shadow: 0 4px 12px rgba(0,0,0,0.15);';
+        toast.innerHTML = `
+            <i class="fas fa-${iconMap[type] || 'info-circle'} me-2"></i>
+            <span class="flash-message-text">${message}</span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        document.body.appendChild(toast);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (toast.parentNode) {
+                const bsAlert = new bootstrap.Alert(toast);
+                bsAlert.close();
+            }
+        }, 5000);
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Risk Distribution Bar Chart
+        const riskDistCtx = document.getElementById('riskDistributionChart').getContext('2d');
+        const riskDistributionData = {{ analytics.risk_distribution|tojson }};
+        
+        const riskDistributionChart = new Chart(riskDistCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Low Risk', 'Medium Risk', 'High Risk'],
+                datasets: [{
+                    label: 'Email Count',
+                    data: [riskDistributionData.Low, riskDistributionData.Medium, riskDistributionData.High],
+                    backgroundColor: [
+                        'rgba(40, 167, 69, 0.7)',   // Green - Low
+                        'rgba(255, 193, 7, 0.7)',   // Yellow - Medium
+                        'rgba(220, 53, 69, 0.7)'    // Red - High
+                    ],
+                    borderColor: [
+                        'rgba(40, 167, 69, 1)',
+                        'rgba(255, 193, 7, 1)',
+                        'rgba(220, 53, 69, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: 'Emails by Risk Level',
+                        font: {
+                            size: 14
+                        }
+                    },
+                    tooltip: {
+                        enabled: false,
+                        external: function(context) {
+                            let el = document.getElementById('riskDistTooltip');
+                            if (!el) {
+                                el = document.createElement('div');
+                                el.id = 'riskDistTooltip';
+                                el.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:10px 14px;border-radius:8px;font-size:0.85rem;pointer-events:none;opacity:0;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.2s ease, left 0.12s ease, top 0.12s ease';
+                                document.body.appendChild(el);
+                            }
+                            const tooltip = context.tooltip;
+                            if (tooltip.opacity === 0 || !tooltip.dataPoints || tooltip.dataPoints.length === 0) {
+                                el.style.opacity = '0';
+                                return;
+                            }
+                            const dp = tooltip.dataPoints[0];
+                            const label = dp.label;
+                            const count = dp.parsed.y;
+                            const riskMap = {
+                                'Low Risk': { icon: 'shield-alt', color: '#22c55e' },
+                                'Medium Risk': { icon: 'exclamation-triangle', color: '#f97316' },
+                                'High Risk': { icon: 'bolt', color: '#ef4444' }
+                            };
+                            const info = riskMap[label] || { icon: 'tag', color: '#888' };
+                            el.innerHTML = `<div style="margin:3px 0;"><i class="fas fa-${info.icon}" style="color:${info.color};width:18px;text-align:center;margin-right:6px;"></i>${label}: ${count} emails</div>`;
+                            requestAnimationFrame(() => { el.style.opacity = '1'; });
+                            const pos = context.chart.canvas.getBoundingClientRect();
+                            let left = pos.left + tooltip.caretX + 12;
+                            let top = pos.top + tooltip.caretY - 10;
+                            if (left + el.offsetWidth > window.innerWidth - 10) left = pos.left + tooltip.caretX - el.offsetWidth - 12;
+                            if (top < 0) top = 0;
+                            el.style.left = left + 'px';
+                            el.style.top = top + 'px';
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+
+        // Custom FA icon legend for risk distribution chart
+        const riskDLegendEl = document.getElementById('riskDistLegend');
+        const riskDLegendIcons = [
+            { label: 'Low Risk', icon: 'shield-alt', color: '#22c55e' },
+            { label: 'Medium Risk', icon: 'exclamation-triangle', color: '#f97316' },
+            { label: 'High Risk', icon: 'bolt', color: '#ef4444' }
+        ];
+        if (riskDLegendEl) {
+            riskDLegendEl.innerHTML = riskDLegendIcons.map(r =>
+                `<span><i class="fas fa-${r.icon}" style="color:${r.color};width:18px;text-align:center;margin-right:4px;"></i> ${r.label}</span>`
+            ).join('');
+        }
+        // Category Breakdown Pie Chart - dynamically sorted, 12 o'clock start
+        const categoryPieCtx = document.getElementById('categoryPieChart').getContext('2d');
+        
+        const CATEGORY_COLORS = {
+            legitimate: '#22c55e',
+            spam: '#ef4444',
+            phishing: '#ff0800',
+            malware: '#6f42c1',
+            promotion: '#f97316',
+            newsletter: '#0ea5e9'
+        };
+
+        function hexToRgba(hex, alpha) {
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+
+        const rawLabels = {{ analytics.chart_labels|default([]) | tojson }};
+        const rawData = {{ analytics.chart_data|default([]) | tojson }};
+
+        // Sort descending by count
+        const sorted = rawLabels.map((l, i) => ({ label: l, count: rawData[i] || 0 }))
+                                .sort((a, b) => b.count - a.count);
+
+        const labels = sorted.map(s => s.label);
+        const data = sorted.map(s => s.count);
+
+        const labelColorMap = {
+            'Not Spam': CATEGORY_COLORS.legitimate,
+            'Spam': CATEGORY_COLORS.spam,
+            'Phishing': CATEGORY_COLORS.phishing,
+            'Malware': CATEGORY_COLORS.malware,
+            'Promotion': CATEGORY_COLORS.promotion,
+            'Newsletter': CATEGORY_COLORS.newsletter
+        };
+
+        const categoryPieChart = new Chart(categoryPieCtx, {
+            type: 'pie',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Email Count',
+                    data,
+                    backgroundColor: labels.map(l => hexToRgba(labelColorMap[l] || '#888', 0.9)),
+                    borderColor: labels.map(l => hexToRgba(labelColorMap[l] || '#888', 1)),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                rotation: 0,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: 'Category Distribution',
+                        font: {
+                            size: 14
+                        }
+                    },
+                    tooltip: {
+                        enabled: false,
+                        external: function(context) {
+                            let el = document.getElementById('pieTooltip');
+                            if (!el) {
+                                el = document.createElement('div');
+                                el.id = 'pieTooltip';
+                                el.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:10px 14px;border-radius:8px;font-size:0.85rem;pointer-events:none;opacity:0;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.2s ease';
+                                document.body.appendChild(el);
+                            }
+                            const tooltip = context.tooltip;
+                            if (tooltip.opacity === 0 || !tooltip.dataPoints || tooltip.dataPoints.length === 0) {
+                                el.style.opacity = '0';
+                                return;
+                            }
+                            const dp = tooltip.dataPoints[0];
+                            const label = dp.label;
+                            const count = dp.parsed || 0;
+                            const pieIcons = {
+                                'Not Spam': { icon: 'check-circle', color: '#22c55e' },
+                                'Spam': { icon: 'exclamation-triangle', color: '#ef4444' },
+                                'Phishing': { icon: 'skull-crossbones', color: '#ff0800' },
+                                'Malware': { icon: 'virus', color: '#6f42c1' },
+                                'Promotion': { icon: 'bullhorn', color: '#f97316' },
+                                'Newsletter': { icon: 'newspaper', color: '#0ea5e9' }
+                            };
+                            const info = pieIcons[label] || { icon: 'tag', color: '#888' };
+                            el.innerHTML = `<div style="margin:3px 0;"><i class="fas fa-${info.icon}" style="color:${info.color};width:18px;text-align:center;margin-right:6px;"></i>${label}: ${count} emails</div>`;
+                            requestAnimationFrame(() => { el.style.opacity = '1'; });
+                            const pos = context.chart.canvas.getBoundingClientRect();
+                            let left = pos.left + tooltip.caretX + 12;
+                            let top = pos.top + tooltip.caretY - 10;
+                            if (left + el.offsetWidth > window.innerWidth - 10) left = pos.left + tooltip.caretX - el.offsetWidth - 12;
+                            if (top < 0) top = 0;
+                            el.style.left = left + 'px';
+                            el.style.top = top + 'px';
+                        }
+                    }
+                }
+            }
+        });
+
+        // Custom FA icon legend for category pie chart
+        const pieLegendEl = document.getElementById('categoryPieLegend');
+        const pieLegendIcons = {
+                                'Not Spam': { icon: 'check-circle', color: '#22c55e' },
+            'Spam': { icon: 'exclamation-triangle', color: '#ef4444' },
+            'Phishing': { icon: 'skull-crossbones', color: '#ff0800' },
+            'Malware': { icon: 'virus', color: '#6f42c1' },
+            'Promotion': { icon: 'bullhorn', color: '#f97316' },
+            'Newsletter': { icon: 'newspaper', color: '#0ea5e9' }
+        };
+        if (pieLegendEl) {
+            pieLegendEl.innerHTML = labels.map(l => {
+                const info = pieLegendIcons[l] || { icon: 'tag', color: '#888' };
+                return `<span><i class="fas fa-${info.icon}" style="color:${info.color};width:18px;text-align:center;margin-right:4px;"></i> ${l}</span>`;
+            }).join('');
+        }
+
+        // Locale-aware chart date formatter
+        function fmtChartDate(dateStr) {
+            return new Date(dateStr + 'T00:00:00').toLocaleDateString(navigator.language, { day: 'numeric', month: 'short' });
+        }
+
+        // Risk Trend Line Chart (Last 7 Days) - Enhanced
+        const riskTrendCtx = document.getElementById('riskTrendChart').getContext('2d');
+        const riskTrendDates = {{ analytics.risk_trend_dates|default([]) | tojson }};
+        const riskTrendValues = {{ analytics.risk_trend_values|default([]) | tojson }};
+        
+        const riskTrendChart = new Chart(riskTrendCtx, {
+            type: 'line',
+            data: {
+                labels: riskTrendDates,
+                datasets: [{
+                    label: 'Average Risk Score',
+                    data: riskTrendValues,
+                    borderColor: 'rgba(102, 16, 242, 1)',
+                    backgroundColor: 'rgba(102, 16, 242, 0.15)',
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: 'rgba(102, 16, 242, 1)',
+                    pointBorderColor: '#fff',
+                    pointRadius: 6,
+                    pointHoverRadius: 10,
+                    pointHoverBackgroundColor: 'rgba(14, 165, 233, 1)',
+                    pointStyle: 'circle',
+                    borderWidth: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: '7-Day Risk Trend',
+                        font: {
+                            size: 14,
+                            weight: 'bold'
+                        }
+                    },
+                    tooltip: {
+                        enabled: false,
+                        external: function(context) {
+                            let el = document.getElementById('riskTrendTooltip');
+                            if (!el) {
+                                el = document.createElement('div');
+                                el.id = 'riskTrendTooltip';
+                                el.style.cssText = 'position:fixed;background:#1e293b;color:#fff;padding:10px 14px;border-radius:8px;font-size:0.85rem;pointer-events:none;opacity:0;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.3);transition:opacity 0.2s ease, left 0.12s ease, top 0.12s ease';
+                                document.body.appendChild(el);
+                            }
+                            const tooltip = context.tooltip;
+                            if (tooltip.opacity === 0 || !tooltip.dataPoints || tooltip.dataPoints.length === 0) {
+                                el.style.opacity = '0';
+                                return;
+                            }
+                            const dp = tooltip.dataPoints[0];
+                            const value = dp.parsed.y;
+                            const date = fmtChartDate(tooltip.title[0]);
+                            let riskLevel, icon, color;
+                            if (value <= 40) { riskLevel = 'Low'; icon = 'shield-alt'; color = '#22c55e'; }
+                            else if (value <= 60) { riskLevel = 'Medium'; icon = 'exclamation-triangle'; color = '#f97316'; }
+                            else { riskLevel = 'High'; icon = 'bolt'; color = '#ef4444'; }
+                            el.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">${date}</div><div style="margin:2px 0;"><i class="fas fa-${icon}" style="color:${color};width:18px;text-align:center;margin-right:6px;"></i>Risk Score: ${value}% (${riskLevel})</div>`;
+                            requestAnimationFrame(() => { el.style.opacity = '1'; });
+                            const pos = context.chart.canvas.getBoundingClientRect();
+                            let left = pos.left + tooltip.caretX + 12;
+                            let top = pos.top + tooltip.caretY - 10;
+                            if (left + el.offsetWidth > window.innerWidth - 10) left = pos.left + tooltip.caretX - el.offsetWidth - 12;
+                            if (top < 0) top = 0;
+                            el.style.left = left + 'px';
+                            el.style.top = top + 'px';
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'Average Risk Score',
+                            font: {
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Date',
+                            font: {
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            callback: function(v, i) { return fmtChartDate(riskTrendDates[i]); }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Custom FA icon legend for risk trend chart
+        const riskTLegendEl = document.getElementById('riskTrendLegend');
+        const riskTLegendIcons = [
+            { label: 'Low Risk (0-40)', icon: 'shield-alt', color: '#22c55e' },
+            { label: 'Medium Risk (41-60)', icon: 'exclamation-triangle', color: '#f97316' },
+            { label: 'High Risk (61-100)', icon: 'bolt', color: '#ef4444' }
+        ];
+        if (riskTLegendEl) {
+            riskTLegendEl.innerHTML = riskTLegendIcons.map(r =>
+                `<span><i class="fas fa-${r.icon}" style="color:${r.color};width:18px;text-align:center;margin-right:4px;"></i> ${r.label}</span>`
+            ).join('');
+        }
+    });
+</script>
+{% endblock %}

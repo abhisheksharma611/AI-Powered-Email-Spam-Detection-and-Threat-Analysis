@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Login - SpamProtection{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center align-items-center py-5">
+        <div class="col-md-8 col-lg-6 col-xl-4 align-self-center">
+            <div class="login-card card shadow-lg">
+                <div class="card-body p-5">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-shield-alt fa-3x text-primary mb-3"></i>
+                        <h2 class="h3 fw-bold">Welcome to SpamProtection</h2>
+                        <p class="text-secondary">Secure login with your Google account</p>
+                    </div>
+                    
+                    <div class="login-form">
+                        <a href="{{ url_for('oauth_login', provider='google') }}"
+                           class="btn btn-google btn-lg w-100 mb-3"
+                           onclick="startGoogleLogin(this)">
+                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="22" height="22"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 9.25c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 2.58 29.93 0 24 0 15.4 0 7.96 4.93 4.34 12.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
+                            Continue with Google
+                        </a>
+                        
+                        <div class="text-center mt-4">
+                            <small class="text-active">
+                                By continuing, you agree to our terms of service and privacy policy.
+                                We only access your email metadata for spam analysis.
+                            </small>
+                        </div>
+                    </div>
+                    
+                    <div class="features-preview mt-5">
+                        <h6 class="text-secondary mb-3">What you'll get:</h6>
+                        <ul class="list-unstyled">
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                AI-powered spam detection
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                Real-time inbox analysis
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                Detailed threat reports
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                Risk assessment scores
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.login-card {
+    border: none;
+    border-radius: 15px;
+}
+
+.btn-google {
+    background-color: #fff;
+    border: 2px solid #000;
+    color: #333;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.btn-google:hover {
+    background-color: #000;
+    border-color: #000;
+    color: #fff;
+}
+
+.features-preview li {
+    font-size: 0.9rem;
+}
+
+.google-dots { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; vertical-align: middle; }
+.gd { width: 10px; height: 10px; border-radius: 50%; display: inline-block; animation: gd-bounce 1s ease-in-out infinite; }
+.gd1 { background: #4285F4; animation-delay: 0s; }
+.gd2 { background: #EA4335; animation-delay: 0.15s; }
+.gd3 { background: #FBBC05; animation-delay: 0.3s; }
+.gd4 { background: #34A853; animation-delay: 0.45s; }
+@keyframes gd-bounce {
+    0%, 80%, 100% { transform: scale(0.6) translateY(0); opacity: 0.4; }
+    40% { transform: scale(1) translateY(-8px); opacity: 1; }
+}
+</style>
+
+<script>
+function startGoogleLogin(btn) {
+    btn.innerHTML = '<span class="google-dots"><span class="gd gd1"></span><span class="gd gd2"></span><span class="gd gd3"></span><span class="gd gd4"></span></span> Redirecting...';
+    btn.style.pointerEvents = 'none';
+    btn.style.opacity = '0.8';
+}
+
+window.addEventListener('pageshow', function() {
+    const btn = document.querySelector('.btn-google');
+    if (btn) {
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="22" height="22"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 9.25c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 2.58 29.93 0 24 0 15.4 0 7.96 4.93 4.34 12.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg> Continue with Google';
+        btn.style.pointerEvents = '';
+        btn.style.opacity = '';
+    }
+});
+</script>
+{% endblock %}
