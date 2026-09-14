@@ -45,7 +45,7 @@ def _load_times():
     return reg, bold
 
 REG, BOLD = _load_times()
-MARGIN = 70
+MARGIN = 72
 HDR_RGB = (0.773, 0.353, 0.067)  # Orange, Accent 2, Darker 50% #C55A11
 
 styles = {
@@ -296,7 +296,7 @@ def _front_matter_abstract():
 
 def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=None):
     doc = SimpleDocTemplate(path, pagesize=A4,
-                            leftMargin=64, rightMargin=64,
+                            leftMargin=72, rightMargin=72,
                             topMargin=65, bottomMargin=75,
                             title="AI-Powered Email Spam Detection and "
                                   "Threat Analysis 2026-2027")
@@ -500,6 +500,8 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
             if item[1] == "1.6":
                 story.append(PageBreak())
             if item[1] == "3.6":
+                story.append(PageBreak())
+            if item[1] == "5.6.2":
                 story.append(PageBreak())
             if item[1] == "5.6.3":
                 story.append(PageBreak())
@@ -730,7 +732,7 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
     # Dummy pass to count pages
     _tmp_buf = io.BytesIO()
     _tmp_doc = SimpleDocTemplate(_tmp_buf, pagesize=A4,
-                                 leftMargin=64, rightMargin=64,
+                                 leftMargin=72, rightMargin=72,
                                  topMargin=65, bottomMargin=75)
     def _dummy_cb(c, d):
         pass
