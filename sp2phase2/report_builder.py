@@ -145,24 +145,24 @@ def _rect(c, x, top_from_top, width, height):
 
 
 def _decorate(c, doc):
-    """Standard header/footer for regular pages. Page number offset by _FRONT_PAGES."""
+    """Standard header/footer for normal pages: left/right at Word Normal 72pt (2.54cm). Page number offset by _FRONT_PAGES."""
     c.saveState()
     w, h = A4
     c.setFillColorRGB(*HDR_RGB)
-    _rect(c, MARGIN, 60.9, w - 2 * MARGIN, 0.8)
-    _rect(c, MARGIN, 64.6, w - 2 * MARGIN, 3.0)
+    _rect(c, 72, 60.9, w - 2 * 72, 0.8)
+    _rect(c, 72, 64.6, w - 2 * 72, 3.0)
     c.setFillColorRGB(0, 0, 0)
     c.setFont(BOLD, 11)
-    c.drawString(MARGIN, h - 55, HEADER.replace(" 2026-2027", ""))
-    c.drawRightString(w - MARGIN, h - 55, "2026-2027")
+    c.drawString(72, h - 55, HEADER.replace(" 2026-2027", ""))
+    c.drawRightString(w - 72, h - 55, "2026-2027")
     c.setFillColorRGB(*HDR_RGB)
-    _rect(c, MARGIN, 765.7, w - 2 * MARGIN, 0.7)
-    _rect(c, MARGIN, 769.5, w - 2 * MARGIN, 3.0)
+    _rect(c, 72, 765.7, w - 2 * 72, 0.7)
+    _rect(c, 72, 769.5, w - 2 * 72, 3.0)
     c.setFillColorRGB(0, 0, 0)
     c.setFont(BOLD, 11)
-    c.drawString(MARGIN, 60, FOOTER)
+    c.drawString(72, 60, FOOTER)
     # show page - front offset so Chapter 1 page 1 is 1 not 6
-    c.drawRightString(w - MARGIN, 60, str(doc.page - _FRONT_PAGES if doc.page > _FRONT_PAGES else doc.page))
+    c.drawRightString(w - 72, 60, str(doc.page - _FRONT_PAGES if doc.page > _FRONT_PAGES else doc.page))
     c.restoreState()
 
 
