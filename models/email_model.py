@@ -32,6 +32,10 @@ class Email(db.Model):
     risk_breakdown = db.Column(db.JSON, nullable=True)
     explanation_summary = db.Column(db.Text, nullable=True)
     
+    # Cached AI explanation (generated once on first open, reused afterwards)
+    ai_explanation = db.Column(db.Text, nullable=True)
+    ai_explanation_generated_at = db.Column(db.DateTime, nullable=True)
+    
     # Spam classification fields
     category = db.Column(db.String(50), default='legitimate', index=True)
     is_spam = db.Column(db.Boolean, default=False)
@@ -65,6 +69,8 @@ class Email(db.Model):
             'confidence': self.confidence,
             'risk_breakdown': self.risk_breakdown,
             'explanation_summary': self.explanation_summary,
+            'ai_explanation': self.ai_explanation,
+            'ai_explanation_generated_at': self.ai_explanation_generated_at.isoformat() if self.ai_explanation_generated_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
     

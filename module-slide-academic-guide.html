@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Modules - Single Slide (Academic)</title>
+<style>
+:root{--navy:#1E3A8A;--ink:#0F172A;--muted:#475569;--line:#CBD5E1;--bg:#fff;--card:#F8FAFC}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:Arial,Calibri,"Segoe UI",sans-serif;background:#E2E8F0;color:var(--ink);overflow:hidden}
+.slide{height:100vh;height:100dvh;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;max-width:1600px;margin:0 auto}
+header{background:var(--navy);color:#fff;padding:clamp(10px,1.4vw,22px) clamp(14px,2vw,32px)}
+header h1{font-size:clamp(20px,2.4vw,34px)}
+header h1 span{font-weight:400;opacity:.85}
+header p{font-size:clamp(12px,1.15vw,16px);opacity:.9;margin-top:4px}
+.main{flex:1;padding:clamp(12px,1.5vw,24px) clamp(14px,2vw,32px);min-height:0;display:flex;flex-direction:column;justify-content:center}
+.grid{flex:0 1 auto;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:clamp(12px,1.4vw,20px);min-height:0}
+.card{background:var(--card);border:1px solid var(--line);border-top:4px solid #2563EB;border-radius:10px;padding:clamp(14px,1.6vw,22px);display:flex;flex-direction:column;justify-content:center;gap:8px}
+.c1{border-top-color:#2563EB}.c2{border-top-color:#0D9488}.c3{border-top-color:#B91C1C}.c4{border-top-color:#15803D}
+.card h3{font-size:clamp(15px,1.5vw,21px);color:var(--navy)}
+.card code{font-family:Consolas,monospace;font-size:clamp(11px,1vw,14px);color:#334155;background:#E2E8F0;border-radius:4px;padding:2px 8px;align-self:flex-start}
+.card ul{margin:2px 0 0 20px;font-size:clamp(12px,1.25vw,18px);line-height:1.6;color:#1e293b;list-style:disc}
+.card ul li{margin-bottom:6px}
+.card ul li:last-child{margin-bottom:0}
+footer{border-top:2px solid var(--navy);padding:8px clamp(14px,2vw,32px);background:#F1F5F9;font-size:clamp(11px,1.05vw,14px);display:flex;gap:14px;align-items:center}
+footer b{color:var(--navy)}
+footer button{margin-left:auto;font:inherit;font-size:.95em;background:var(--navy);color:#fff;border:0;border-radius:8px;padding:6px 14px;cursor:pointer}
+#guide{display:none;position:fixed;inset:5vh 6vw;background:#fff;border:2px solid var(--navy);border-radius:14px;padding:22px 26px;overflow:auto;z-index:50;box-shadow:0 30px 80px rgba(0,0,0,.35);font-size:15px;line-height:1.55}
+#guide.open{display:block}
+#guide h2{color:var(--navy);font-size:19px;margin-bottom:6px}
+#guide h3{color:var(--navy);font-size:15px;margin:12px 0 4px}
+#guide ol,#guide ul{margin-left:20px}
+#guide li{margin-bottom:4px}
+#guide .close{float:right}
+@media print{#guide{display:block;position:static;box-shadow:none;margin:12px}body{overflow:visible}.slide{height:auto}footer button{display:none}}
+</style>
+</head>
+<body>
+<main>
+<section class="slide" aria-label="Webapp modules in 4 stages">
+<header>
+<h1>AI-Powered Email Spam Detection <span>— System Modules</span></h1>
+<p>Gmail read-only &bull; classify &rarr; score &rarr; display &bull; local SQLite</p>
+</header>
+<div class="main">
+<div class="grid">
+<article class="card c1"><h3>1. Data Acquisition &amp; Authentication</h3><code>app.py · config.py · utils/auth.py · gmail_client.py</code><ul><li>Signs in with Google (read-only) and downloads your latest 50 mails, 20 at a time.</li><li>Runs the same checking pipeline for quick scans and background scans.</li></ul></article>
+<article class="card c2"><h3>2. Text Preprocessing &amp; Feature Engineering</h3><code>gmail_client.py · preprocessing.py</code><ul><li>Opens each mail, decodes it, removes formatting → plain text.</li><li>Measures 6 spam clues: length, capitals, links, phone, urgency words.</li></ul></article>
+<article class="card c3"><h3>3. Hybrid Classification &amp; Risk Assessment</h3><code>predictor.py · roberta_model.py · helpers.py</code><ul><li>AI reads the text and votes (90% RoBERTa + 10% backup) → 1 of 6 categories.</li><li>Adds urgency + sender past + learnt keywords → risk 0–100 with a reason.</li></ul></article>
+<article class="card c4"><h3>4. Storage &amp; Visualization</h3><code>email_model.py · templates/ · static/ · ai_explanation.py</code><ul><li>Saves everything per user in a local database (4 tables).</li><li>Shows results table, charts and threat page — 12 pages total.</li></ul></article>
+</div>
+</div>
+<footer><div><b>6 classes:</b> spam / legitimate / promotion / phishing / malware / newsletter &nbsp;&nbsp; <b>Risk:</b> Low 0–40 · Med 41–60 · High 61–100</div><button id="gbtn" type="button">What to say + Q&amp;A</button></footer>
+</section>
+</main>
+<aside id="guide" aria-label="Presenter guide">
+<button class="close" id="gclose" type="button">Close ✕</button>
+<h2>What to say (60 seconds, plain words)</h2>
+<ol>
+<li><b>Box 1:</b> "The app logs in with your Google account — read-only, so it can never send or delete mail — and downloads the latest 50 mails."</li>
+<li><b>Box 2:</b> "Each mail is opened, decoded and cleaned into plain text, then we measure 6 spam clues like links, capitals and urgency words."</li>
+<li><b>Box 3:</b> "Two AI models vote on the category, then urgency, sender history and learnt keywords adjust it into a 0–100 risk with a written reason."</li>
+<li><b>Box 4:</b> "Everything is saved per user in a local database and shown as a results table, charts and a threat page."</li>
+</ol>
+<h3>If the guide asks… (one-line answers)</h3>
+<ul>
+<li><b>Why two models?</b> RoBERTa understands meaning; the small ensemble is a cheap backup. 90/10 blend; either can work alone.</li>
+<li><b>Why read-only Gmail?</b> Safety + privacy — the app physically cannot send, delete or relabel.</li>
+<li><b>Which are threats?</b> Only spam, phishing, malware. Promotion and newsletter are never counted as threats.</li>
+<li><b>How is 0–100 made?</b> Base per category × confidence, plus urgency / sender / keyword boosts, capped at 100.</li>
+<li><b>Models missing?</b> API returns 503 — it never invents a fake label.</li>
+<li><b>Limits?</b> ~200–500 ms per mail on CPU, 7-day trends, single worker (rate limits are in-process).</li>
+</ul>
+</aside>
+<script>
+(function(){var b=document.getElementById('gbtn'),g=document.getElementById('guide'),c=document.getElementById('gclose');
+b.addEventListener('click',function(){g.classList.toggle('open')});c.addEventListener('click',function(){g.classList.remove('open')});
+addEventListener('keydown',function(e){if(e.key.toLowerCase()==='p')g.classList.toggle('open');if(e.key==='Escape')g.classList.remove('open')});})();
+</script>
+</body>
+</html>

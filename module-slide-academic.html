@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Modules - Single Slide (Academic)</title>
+<style>
+:root{--navy:#1E3A8A;--ink:#0F172A;--muted:#475569;--line:#CBD5E1;--bg:#fff;--card:#F8FAFC}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{font-family:Arial,Calibri,"Segoe UI",sans-serif;background:#E2E8F0;color:var(--ink);overflow:hidden}
+.slide{height:100vh;height:100dvh;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;max-width:1600px;margin:0 auto}
+header{background:var(--navy);color:#fff;padding:clamp(10px,1.4vw,22px) clamp(14px,2vw,32px)}
+header h1{font-size:clamp(20px,2.4vw,34px)}
+header h1 span{font-weight:400;opacity:.85}
+header p{font-size:clamp(12px,1.15vw,16px);opacity:.9;margin-top:4px}
+.main{flex:1;padding:clamp(12px,1.5vw,24px) clamp(14px,2vw,32px);min-height:0;display:flex;flex-direction:column;justify-content:center}
+.grid{flex:0 1 auto;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:clamp(12px,1.4vw,20px);min-height:0}
+.card{background:var(--card);border:1px solid var(--line);border-top:4px solid #2563EB;border-radius:10px;padding:clamp(14px,1.6vw,22px);display:flex;flex-direction:column;justify-content:center;gap:8px}
+.c1{border-top-color:#2563EB}.c2{border-top-color:#0D9488}.c3{border-top-color:#B91C1C}.c4{border-top-color:#15803D}
+.card h3{font-size:clamp(15px,1.5vw,21px);color:var(--navy)}
+.card code{font-family:Consolas,monospace;font-size:clamp(11px,1vw,14px);color:#334155;background:#E2E8F0;border-radius:4px;padding:2px 8px;align-self:flex-start}
+.card ul{margin:2px 0 0 20px;font-size:clamp(12px,1.25vw,18px);line-height:1.6;color:#1e293b;list-style:disc}
+.card ul li{margin-bottom:6px}
+.card ul li:last-child{margin-bottom:0}
+.card ul b{color:var(--navy)}
+footer{border-top:2px solid var(--navy);padding:8px clamp(14px,2vw,32px);background:#F1F5F9;font-size:clamp(11px,1.05vw,14px)}
+footer b{color:var(--navy)}
+@media print{.slide{height:auto}body{overflow:visible}}
+</style>
+</head>
+<body>
+<main>
+<section class="slide" aria-label="Webapp modules in 4 stages">
+<header>
+<h1>AI-Powered Email Spam Detection <span>— System Modules</span></h1>
+<p>Gmail read-only &bull; classify &rarr; score &rarr; display &bull; local SQLite</p>
+</header>
+<div class="main">
+<div class="grid">
+<article class="card c1"><h3>1. Data Acquisition &amp; Authentication</h3><code>app.py · config.py · utils/auth.py · gmail_client.py</code><ul><li><b>Logs in</b> with Google OAuth and <b>fetches</b> latest 50 Gmail IDs, batch ×20 with retry.</li><li><b>Controls</b> sync + background scans through one pipeline, batch 10.</li></ul></article>
+<article class="card c2"><h3>2. Text Preprocessing &amp; Feature Engineering</h3><code>gmail_client.py · preprocessing.py</code><ul><li><b>Parses</b> MIME/base64 headers and <b>cleans</b> HTML into plain lowercase text.</li><li><b>Extracts</b> 6 numeric signals (length, caps, URL/phone, urgency).</li></ul></article>
+<article class="card c3"><h3>3. Hybrid Classification &amp; Risk Assessment</h3><code>predictor.py · roberta_model.py · helpers.py</code><ul><li><b>Classifies</b> with 0.90 RoBERTa + 0.10 ensemble into 6 categories.</li><li><b>Scores</b> urgency + sender history + keywords into 0–100 risk + summary.</li></ul></article>
+<article class="card c4"><h3>4. Storage &amp; Visualization</h3><code>email_model.py · templates/ · static/ · ai_explanation.py</code><ul><li><b>Stores</b> results per-user in SQLite (Email, reputation, keywords).</li><li><b>Displays</b> 12 pages: results table, analytics charts, threat console.</li></ul></article>
+</div>
+</div>
+<footer><b>6 classes:</b> spam / legitimate / promotion / phishing / malware / newsletter &nbsp;&nbsp; <b>Risk:</b> Low 0–40 · Med 41–60 · High 61–100</footer>
+</section>
+</main>
+</body>
+</html>

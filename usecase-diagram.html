@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Use Case Diagram — Spam Protection Webapp</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Calibri,"Segoe UI",sans-serif;background:#d4d4d4;padding:24px}
+.slide{max-width:1100px;margin:0 auto;background:#e9e9e9}
+svg{display:block;width:100%;height:auto}
+.cap{max-width:1100px;margin:10px auto 0;color:#2b2b2b;font-size:12.5px;line-height:1.6}
+.cap code{font-family:Consolas,monospace;font-size:11.5px;background:#c9c9c9;padding:1px 6px;border-radius:4px}
+@media print{body{background:#fff;padding:0}}
+</style>
+</head>
+<body>
+<div class="slide">
+<svg viewBox="0 0 1100 800" role="img" aria-labelledby="ucd-title ucd-desc">
+<title id="ucd-title">Use case diagram of the Spam Protection webapp</title>
+<desc id="ucd-desc">One user actor on the left and Google services on the right connect to eight use cases stacked inside the system boundary.</desc>
+<!-- page + header -->
+<rect x="0" y="0" width="1100" height="800" fill="#e9e9e9"/>
+<path d="M0,0 H1100 V96 Q720,168 0,116 Z" fill="#1d1333"/>
+<rect x="1020" y="0" width="52" height="60" fill="#a12556"/>
+<text x="120" y="72" font-size="40" font-weight="bold" fill="#e0507c" font-family="Arial">USE CASE DIAGRAM</text>
+<path d="M0,116 Q720,168 1100,96 L1100,124 Q720,196 0,144 Z" fill="#2c2148"/>
+<!-- actors -->
+<g stroke="#1f1f1f" stroke-width="3" fill="none">
+<circle cx="200" cy="328" r="12" fill="#e9e9e9"/>
+<path d="M200 340 v52 M176 356 h48 M200 392 l-24 44 M200 392 l24 44"/>
+<circle cx="900" cy="328" r="12" fill="#e9e9e9"/>
+<path d="M900 340 v52 M876 356 h48 M900 392 l-24 44 M900 392 l24 44"/>
+</g>
+<text x="200" y="460" text-anchor="middle" font-size="16" font-weight="bold" fill="#1f1f1f" font-family="Arial">User</text>
+<text x="900" y="460" text-anchor="middle" font-size="16" font-weight="bold" fill="#1f1f1f" font-family="Arial">Google Services</text>
+<text x="900" y="480" text-anchor="middle" font-size="11" fill="#333" font-family="Arial">OAuth · Gmail API · NIM</text>
+<!-- connectors behind boundary -->
+<g stroke="#1f1f1f" stroke-width="2">
+<line x1="216" y1="352" x2="396" y2="216"/><line x1="216" y1="352" x2="396" y2="280"/>
+<line x1="216" y1="352" x2="396" y2="344"/><line x1="216" y1="352" x2="396" y2="408"/>
+<line x1="216" y1="352" x2="396" y2="472"/><line x1="216" y1="352" x2="396" y2="536"/>
+<line x1="216" y1="352" x2="396" y2="600"/><line x1="216" y1="352" x2="396" y2="664"/>
+</g>
+<g stroke="#1f1f1f" stroke-width="2" stroke-dasharray="7 5">
+<line x1="884" y1="352" x2="700" y2="216"/><line x1="884" y1="352" x2="700" y2="280"/>
+<line x1="884" y1="352" x2="700" y2="344"/><line x1="884" y1="352" x2="700" y2="472"/>
+</g>
+<!-- system boundary -->
+<rect x="370" y="172" width="356" height="540" fill="#f4f4f4" stroke="#1f1f1f" stroke-width="2"/>
+<!-- ovals -->
+<g text-anchor="middle" font-family="Arial" font-size="15" fill="#111">
+<g><ellipse cx="548" cy="216" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="221">Login / Logout</text></g>
+<g><ellipse cx="548" cy="280" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="285">Scan inbox now</text></g>
+<g><ellipse cx="548" cy="344" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="349">Scan in background</text></g>
+<g><ellipse cx="548" cy="408" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="413">Browse results</text></g>
+<g><ellipse cx="548" cy="472" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="477">Open mail verdict</text></g>
+<g><ellipse cx="548" cy="536" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="541">Check pasted text</text></g>
+<g><ellipse cx="548" cy="600" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="605">View analytics</text></g>
+<g><ellipse cx="548" cy="664" rx="152" ry="24" fill="#ffffff" stroke="#1f1f1f" stroke-width="2"/><text x="548" y="669">Threat console</text></g>
+</g>
+<!-- footer -->
+<rect x="0" y="748" width="1100" height="52" fill="#111"/>
+<rect x="1048" y="748" width="52" height="52" fill="#a12556"/>
+</svg>
+</div>
+<p class="cap">Traced from <code>22 @app.route</code> in <code>app.py</code> — every feature route is <code>@login_required</code>, and <code>/admin/threat-console</code> has no role check, so one human actor. Solid lines = user uses · dashed = Google side (login via OAuth, mails via Gmail API, one explanation via NIM). No Admin actor: <code>ADMIN_EMAILS</code> gates nothing — call it a proposed extension in viva.</p>
+</body>
+</html>

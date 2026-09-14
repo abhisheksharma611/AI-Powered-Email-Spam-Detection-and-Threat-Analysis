@@ -369,6 +369,12 @@ def _process_single_email(metadata, prediction, user_email, db_session=None):
 
     try:
         record = Email.get_or_create(sess, metadata['id'], user_email)
+        # Cache invalidation: if a re-scan changed the classification, the
+        # cached AI explanation no longer matches — drop it so the next
+        # open regenerates it from the fresh prediction.
+        if record.ai_explanation and record.category and record.category != cat:
+            record.ai_explanation = None
+            record.ai_explanation_generated_at = None
         record.subject = str(metadata['subject'])[:500]
         record.sender = str(metadata['sender'])[:255]
         record.snippet = str(metadata['snippet'])[:1000]
@@ -435,7 +441,7 @@ def _process_single_email(metadata, prediction, user_email, db_session=None):
             'risk_score': record.risk_score, 'risk_level': record.risk_level,
             'confidence': confidence, 'urgency_score': urgency['urgency_score'],
             'urgency_level': urgency['urgency_level'], 'risk_breakdown': record.risk_breakdown,
-            'explanation_summary': record.explanation_summary,
+            'explanation_summary': record.ai_explanation or record.explanation_summary,
             'spam_probability': confidence if is_spam else max(0, 100 - confidence),
         }
     except Exception as e:
@@ -950,7 +956,8 @@ def _email_to_dict(e):
         'is_spam': e.is_spam, 'risk_score': e.risk_score or 0, 'risk_level': e.risk_level,
         'confidence': e.confidence or 0.0, 'urgency_score': e.urgency_score or 0,
         'urgency_level': e.urgency_level,
-        'risk_breakdown': e.risk_breakdown or {}, 'explanation_summary': e.explanation_summary,
+        'risk_breakdown': e.risk_breakdown or {},
+        'explanation_summary': e.ai_explanation or e.explanation_summary,
         'spam_probability': e.confidence if e.is_spam else max(0, 100 - (e.confidence or 0)),
     }
 
@@ -1313,12 +1320,27 @@ def view_email(email_id):
             'body_text': full['body_text'], 'body_type': full['body_type'], 'snippet': full['snippet'],
         }
 
-        ai_exp = generate_ai_explanation(
-            email_data.get('subject', ''), email_data.get('body_text', email_data.get('snippet', '')),
-            analysis.get('category', 'unknown'), analysis.get('confidence', 0.0)
-        )
-        if ai_exp:
-            analysis['explanation_summary'] = ai_exp
+        # AI explanation is generated ONCE per email and cached in the DB;
+        # every subsequent open serves the stored explanation (stable, instant).
+        if record.ai_explanation:
+            analysis['explanation_summary'] = record.ai_explanation
+        else:
+            ai_exp = generate_ai_explanation(
+                email_data.get('subject', ''), email_data.get('body_text', email_data.get('snippet', '')),
+                analysis.get('category', 'unknown'), analysis.get('confidence', 0.0)
+            )
+            if ai_exp:
+                record.ai_explanation = ai_exp
+                record.ai_explanation_generated_at = datetime.utcnow()
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    logger.warning('Failed to cache AI explanation for email %s', email_id)
+                analysis['explanation_summary'] = ai_exp
+            # else: AI failed/timed out — fall back to the rule-based summary
+            # already stored in analysis; the cache stays empty so the next
+            # open retries generation (self-healing).
 
         if is_ajax:
             return jsonify({'success': True, 'email': email_data, 'analysis': analysis})
