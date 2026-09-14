@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.enums import TA_JUSTIFY, TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Image,
+from reportlab.platypus import (SimpleDocTemplate, BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, Image,
                                 PageBreak, Table, TableStyle)
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
@@ -144,6 +144,21 @@ def _rect(c, x, top_from_top, width, height):
     c.rect(x, A4[1] - top_from_top, width, height, fill=1, stroke=0)
 
 
+def _make_doc(dest):
+    """A4 doc with Word Normal margins and zero side frame padding so body text aligns exactly to header/footer at 72pt."""
+    _LM, _RM, _TM, _BM = 72, 72, 65, 75
+    doc = BaseDocTemplate(dest, pagesize=A4, leftMargin=_LM, rightMargin=_RM,
+                          topMargin=_TM, bottomMargin=_BM,
+                          title="AI-Powered Email Spam Detection and "
+                                "Threat Analysis 2026-2027", showBoundary=0)
+    _fw = A4[0] - _LM - _RM
+    _fh = A4[1] - _TM - _BM
+    _frame = Frame(_LM, _BM, _fw, _fh, id="main", leftPadding=0, rightPadding=0,
+                   topPadding=6, bottomPadding=6)
+    doc.addPageTemplates([PageTemplate(id="main", frames=[_frame], pagesize=A4)])
+    return doc
+
+
 def _decorate(c, doc):
     """Standard header/footer for normal pages: left/right at Word Normal 72pt (2.54cm). Page number offset by _FRONT_PAGES."""
     c.saveState()
@@ -209,7 +224,7 @@ def _draw_border_page(c, doc):
         # back special pages continue roman numerals after front matter
         _last = sorted([p for p in _special_border_pages if p > _FRONT_PAGES])
         if doc.page in _last:
-            c.drawCentredString(w / 2, 60, _to_roman(_FRONT_PAGES + _last.index(doc.page)))
+            c.drawCentredString(w / 2, 60, _to_roman(_FRONT_PAGES + _last.index(doc.page) + 1))
         else:
             arabic = doc.page - _FRONT_PAGES
             roman = _ROMAN.get(arabic) or _to_roman(arabic)
@@ -295,11 +310,7 @@ def _front_matter_abstract():
     )
 
 def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=None):
-    doc = SimpleDocTemplate(path, pagesize=A4,
-                            leftMargin=72, rightMargin=72,
-                            topMargin=65, bottomMargin=75,
-                            title="AI-Powered Email Spam Detection and "
-                                  "Threat Analysis 2026-2027")
+    doc = _make_doc(path)
     story = []
     # ---- Front matter with decorative border (same as last 3 special pages) ----
     if include_front:
@@ -485,6 +496,7 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
         ]))
         story.append(lof_tbl)
         story.append(PageBreak())
+    refs_story_idx = None
     first_chapter = True
     for item in CONTENT:
         if item[0]=="__skip__":
@@ -719,6 +731,7 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
             if len(item) > 3 and item[3]:
                 story.append(Paragraph(_esc(item[3]), styles["special_body"]))
         elif kind == "references":
+            refs_story_idx = len(story)
             story.append(PageBreak())
             story.append(Spacer(1, 18))
             story.append(Paragraph("REFERENCES", styles["special_heading"]))
@@ -731,22 +744,28 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
     _special_border_pages.clear()
     # Dummy pass to count pages
     _tmp_buf = io.BytesIO()
-    _tmp_doc = SimpleDocTemplate(_tmp_buf, pagesize=A4,
-                                 leftMargin=72, rightMargin=72,
-                                 topMargin=65, bottomMargin=75)
+    _tmp_doc = _make_doc(_tmp_buf)
     def _dummy_cb(c, d):
         pass
     # Need deep copy of story because build consumes it
     import copy as _copy
     _tmp_story = _copy.deepcopy(story)
     try:
-        _tmp_doc.build(_tmp_story, onFirstPage=_dummy_cb, onLaterPages=_dummy_cb)
+        _tmp_doc.build(_tmp_story)
         total_pages = _tmp_doc.page
     except Exception:
         total_pages = None
+    _refs_pages = 1
+    if refs_story_idx is not None:
+        try:
+            _probe_buf = io.BytesIO()
+            _probe_doc = _make_doc(_probe_buf)
+            _probe_doc.build(_copy.deepcopy(story[refs_story_idx + 1:]))
+            _refs_pages = max(_probe_doc.page, 1)
+        except Exception:
+            _refs_pages = 1
     if total_pages and total_pages >= 1:
-        # Phase-2: only the trailing REFERENCES page gets the border (single special page)
-        _special_border_pages.update({total_pages})
+        _special_border_pages.update({total_pages - i for i in range(_refs_pages)})
         if include_front:
             # Front matter occupies first 5 pages (Contents spans 2 pages)
             _special_border_pages.update({1, 2, 3, 4, 5})
@@ -761,5 +780,6 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
         else:
             _decorate(c, page_doc)
 
-    doc.build(story, onFirstPage=_page_callback, onLaterPages=_page_callback)
+    doc.pageTemplates[0].onPage = _page_callback
+    doc.build(story)
     print("PDF written:", path)
