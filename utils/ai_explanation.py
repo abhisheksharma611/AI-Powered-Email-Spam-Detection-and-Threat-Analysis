@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import logging
 from dotenv import load_dotenv
@@ -65,14 +66,28 @@ def generate_ai_explanation(subject: str, body_snippet: str, category: str, conf
                     {"role": "user", "content": user_prompt}
                 ],
                 "temperature": 0.3,
-                "max_tokens": 200
+                "max_tokens": 200,
+                # Nemotron 3.5+ reasoning models: disable chain-of-thought so
+                # the explanation isn't polluted with internal reasoning.
+                **({"chat_template_kwargs": {"enable_thinking": False}}
+                   if "nemotron" in model.lower() else {})
             },
             timeout=15
         )
         response.raise_for_status()
         data = response.json()
         choice = data['choices'][0]['message']['content']
-        return choice.strip() if choice else None
+        if choice:
+            # Some reasoning models still emit think blocks; strip them.
+            # (chr(60)/chr(62) = angle brackets, kept out of source for safety)
+            think_open = chr(60) + "think" + chr(62)
+            think_close = chr(60) + "/" + "think" + chr(62)
+            choice = re.sub(
+                re.escape(think_open) + ".*?" + re.escape(think_close),
+                "", choice, flags=re.DOTALL
+            )
+            choice = choice.strip()
+        return choice or None
     except requests.Timeout:
         logger.warning('AI explanation timed out after 15s')
         return None
