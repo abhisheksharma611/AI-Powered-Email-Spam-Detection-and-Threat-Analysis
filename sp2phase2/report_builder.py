@@ -23,25 +23,21 @@ from reportlab.pdfbase.ttfonts import TTFont
 # fonts (same as reference)
 # ----------------------------------------------------------------------
 def _load_times():
+    # Exact Times New Roman only - no fallback to any other family.
     reg = bold = None
     for p in [r"C:\Windows\Fonts\times.ttf",
               r"C:\Windows\Fonts\Times New Roman\Times New Roman.ttf"]:
         if os.path.exists(p):
-            try:
-                pdfmetrics.registerFont(TTFont("Times", p)); reg = "Times"
-            except Exception:
-                pass
+            pdfmetrics.registerFont(TTFont("Times", p)); reg = "Times"
             break
     if reg is None:
-        reg = "Times-Roman"
+        raise RuntimeError("Times New Roman regular (times.ttf) missing - exact TNR required")
     for p in [r"C:\Windows\Fonts\timesbd.ttf"]:
         if os.path.exists(p):
-            try:
-                pdfmetrics.registerFont(TTFont("TimesBd", p)); bold = "TimesBd"
-            except Exception:
-                pass
+            pdfmetrics.registerFont(TTFont("TimesBd", p)); bold = "TimesBd"
+            break
     if bold is None:
-        bold = "Times-Bold"
+        raise RuntimeError("Times New Roman bold (timesbd.ttf) missing - exact TNR required")
     return reg, bold
 
 REG, BOLD = _load_times()
@@ -54,14 +50,16 @@ styles = {
     "chapter_title": ParagraphStyle("chapter_title", fontName=BOLD, fontSize=16,
                                     leading=20, spaceBefore=0, spaceAfter=10,
                                     alignment=TA_CENTER),
-    "sec": ParagraphStyle("sec", fontName=BOLD, fontSize=12, leading=20,
+    "sec": ParagraphStyle("sec", fontName=BOLD, fontSize=14, leading=20,
                           spaceBefore=10, spaceAfter=6),
+    "subsec": ParagraphStyle("subsec", fontName=BOLD, fontSize=12, leading=20,
+                             spaceBefore=10, spaceAfter=6),
     "body": ParagraphStyle("body", fontName=REG, fontSize=12, leading=20.5,
                            spaceAfter=8, alignment=TA_JUSTIFY),
     "cap": ParagraphStyle("cap", fontName=REG, fontSize=10, leading=13,
                            spaceBefore=3, spaceAfter=4, alignment=TA_CENTER),
-    "tcell": ParagraphStyle("tcell", fontName=REG, fontSize=9, leading=11),
-    "thead": ParagraphStyle("thead", fontName=BOLD, fontSize=9, leading=11,
+    "tcell": ParagraphStyle("tcell", fontName=REG, fontSize=11, leading=13.5),
+    "thead": ParagraphStyle("thead", fontName=BOLD, fontSize=11, leading=13.5,
                             textColor=colors.white),
     # Special styles for Conclusion / Future Scope / References
     "special_heading": ParagraphStyle("special_heading", fontName=BOLD,
@@ -239,8 +237,8 @@ def _make_table(headers, rows):
     is_test_cases = headers[0] == "ID" and headers[1] == "Test Objective"
     if is_test_cases:
         from reportlab.lib.styles import ParagraphStyle as _PS
-        small_thead = _PS("sm_thead", parent=styles["thead"], fontSize=7.5, leading=9.5)
-        small_tcell = _PS("sm_tcell", parent=styles["tcell"], fontSize=7.5, leading=9.5)
+        small_thead = _PS("sm_thead", parent=styles["thead"], fontSize=11, leading=13.5)
+        small_tcell = _PS("sm_tcell", parent=styles["tcell"], fontSize=11, leading=13.5)
         data = [[Paragraph(_esc(h), small_thead) for h in headers]]
         for r in rows:
             data.append([Paragraph(_esc(str(cell)), small_tcell) for cell in r])
@@ -273,7 +271,7 @@ def _make_table(headers, rows):
             widths = [tw / float(n)] * n
     else:
         widths = [tw / float(n)] * n
-    rh = [28] + [22]*len(rows) if headers == ["Member", "Key hyper-parameters"] else [22]*len(data) if headers == ["#", "Preprocessing step", "Purpose"] else [20]+[46]*len(rows) if headers[0] == "ID" and headers[1] == "Test Objective" else None
+    rh = None  # auto row heights so 11pt text never clips
     t = Table(data, colWidths=widths, repeatRows=1, rowHeights=rh)
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.Color(*HDR_RGB)),
@@ -519,8 +517,9 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
                 story.append(PageBreak())
             if item[1] == "6.3":
                 story.append(PageBreak())
+            _sec_style = styles["subsec"] if item[1].count(".") == 2 else styles["sec"]
             story.append(Paragraph("%s &nbsp;%s" % (item[1], item[2]),
-                                   styles["sec"]))
+                                   _sec_style))
         elif kind == "select":
             story.append(Paragraph(item[2], styles["sec"]))
         elif kind == "pagebreak":
@@ -671,8 +670,8 @@ def build_pdf(path, CONTENT, include_front=True, toc_entries=None, lof_entries=N
             if headers == ["View", "Route", "HTTP method", "Template", "Purpose"]:
                 # Custom small table for 4.8
                 from reportlab.lib.styles import ParagraphStyle as _PS
-                small_tcell = ParagraphStyle("small_tcell", parent=styles["tcell"], fontSize=7, leading=9)
-                small_thead = ParagraphStyle("small_thead", parent=styles["thead"], fontSize=7, leading=9)
+                small_tcell = ParagraphStyle("small_tcell", parent=styles["tcell"], fontSize=11, leading=13.5)
+                small_thead = ParagraphStyle("small_thead", parent=styles["thead"], fontSize=11, leading=13.5)
                 data = [[Paragraph(_esc(h), small_thead) for h in headers]]
                 for r in rows:
                     data.append([Paragraph(_esc(str(c)), small_tcell) for c in r])
