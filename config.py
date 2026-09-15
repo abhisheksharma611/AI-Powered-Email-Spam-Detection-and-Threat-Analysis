@@ -51,6 +51,19 @@ class Config:
     # ML Model Configuration
     MODEL_PATH = 'models/ensemble_model.joblib'
     VECTORIZER_PATH = 'models/vectorizer.joblib'
+
+    # Local Ollama AI explanation (active — gemma2:2b only)
+    OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
+    OLLAMA_MODEL = os.environ.get('OLLAMA_MODEL', 'gemma2:2b')
+    OLLAMA_TIMEOUT = int(os.environ.get('OLLAMA_TIMEOUT', '90'))
+    OLLAMA_NUM_CTX = int(os.environ.get('OLLAMA_NUM_CTX', '4096'))
+    OLLAMA_NUM_PREDICT = int(os.environ.get('OLLAMA_NUM_PREDICT', '100'))
+    OLLAMA_KEEP_ALIVE = os.environ.get('OLLAMA_KEEP_ALIVE', '5m')
+
+    # NVIDIA NIM (commented out for now — uncomment .env lines to re-enable)
+    # NVIDIA_NIM_BASE_URL = os.environ.get('NVIDIA_NIM_BASE_URL')
+    # NVIDIA_NIM_API_KEY = os.environ.get('NVIDIA_NIM_API_KEY')
+    # NVIDIA_NIM_MODEL = os.environ.get('NVIDIA_NIM_MODEL')
     
     # Session Configuration
     SESSION_TYPE = 'filesystem'
