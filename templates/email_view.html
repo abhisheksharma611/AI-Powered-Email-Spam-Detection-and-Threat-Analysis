@@ -180,7 +180,7 @@
             {% if analysis.explanation_summary %}
             <div class="mt-3" id="modalExplanationRow">
                 <div class="alert alert-info mb-0 py-2 px-3 border-0" style="border-radius: 10px; background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);">
-                    <span class="badge me-1" style="font-size: 13px; vertical-align: middle; background-color: #2563EB; color: #fff;">AI</span> <span id="modalExplanation" style="font-size: 14px; color: #1e293b; font-weight: 500; line-height: 1.5;">{{ analysis.explanation_summary }}</span>
+                    <span class="badge me-1" style="font-size: 13px; vertical-align: middle; background-color: #2563EB; color: #fff;">AI</span> <span id="modalExplanation" style="font-size: 14px; color: #1e293b; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; word-break: break-word;">{{ analysis.explanation_summary }}</span>
                 </div>
             </div>
             {% endif %}
