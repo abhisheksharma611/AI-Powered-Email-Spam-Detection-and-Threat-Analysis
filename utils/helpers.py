@@ -394,8 +394,15 @@ def learn_keywords_from_email(subject: str, body: str, category: str, db_session
     if category not in ['phishing', 'malware']:
         return 0
     
-    # COOLDOWN: Only learn from high-confidence predictions to prevent feedback loops
-    if confidence < 0.80:
+    # COOLDOWN: only learn from very high-confidence predictions.
+    # Scale is 0-100, NOT 0-1. models/predictor.py:230 returns `confidence * 100`.
+    # The old `0.80` made this guard dead: 95 < 0.80 is always False, so every
+    # phishing/malware prediction was learned regardless of confidence.
+    # Raised from 80 to 95 after the learned-keyword feedback loop was measured on a
+    # real mailbox: Google Drive share mails scored 81-86 and were confidently wrong,
+    # which put `https`, `google`, `accounts` and `link` into the table as attack
+    # evidence, and those then matched 255, 80, 133 and 255 further legitimate mails.
+    if confidence < 95.0:
         return 0
     
     try:
@@ -450,6 +457,55 @@ def learn_keywords_from_email(subject: str, body: str, category: str, db_session
         return 0
 
 
+# Tokens that must never be learned as phishing or malware evidence.
+#
+# These were the highest-frequency matches against a real Gmail mailbox and are
+# the reason legitimate infrastructure mail was being pushed to High risk. None
+# of them distinguishes an attack from a routine notification:
+#
+#   https (255 hits), unsubscribe (191), data (169), update (165), account (133),
+#   india (105), desi (100), live (100), week (86), abhishek (84), learn (82),
+#   access (81), google (80), code (76), click (75), refer (74), first (74),
+#   develop (73), medium, support, work, open, model, models, chatgpt, ollama,
+#   openrouter, desktop, canva, select, tasks, bank, link, receive, request,
+#   removed, meet, guidelines, money, doctor, insurance, cloud, mail, alert
+#
+# "abhishek" and "kumar" are a person's name. "india", "desi", "google", "apple"
+# and "canva" are brands that send entirely legitimate mail. Learning any of them
+# as attack evidence is a false positive waiting to happen.
+NON_DISCRIMINATIVE_KEYWORDS = frozenset({
+    # schemes and structure
+    'https', 'http', 'www', 'com', 'html', 'url', 'link', 'links', 'click',
+    'clicked', 'open', 'opens', 'view', 'here', 'read', 'more', 'reply',
+    'unsubscribe', 'update', 'updated', 'please', 'thanks', 'thank', 'hello',
+    'regards', 'best', 'team', 'support', 'help', 'info', 'note', 'notes',
+    'remove', 'removed', 'request', 'requests', 'access', 'account', 'accounts',
+    'data', 'detail', 'details', 'file', 'files', 'document', 'documents',
+    'alert', 'alerts', 'notice', 'notification', 'notifications', 'new',
+    # generic verbs / adverbs
+    'first', 'last', 'next', 'now', 'today', 'week', 'weekly', 'month',
+    'year', 'day', 'live', 'learn', 'learning', 'develop', 'development',
+    'receive', 'received', 'send', 'sent', 'see', 'know', 'need', 'make',
+    'find', 'get', 'use', 'using', 'work', 'works', 'code', 'medium',
+    'select', 'selecting', 'tasks', 'model', 'models', 'desktop', 'meet',
+    'money', 'guidelines', 'refer', 'referral', 'continue', 'start', 'begin',
+    'your', 'you', 'our', 'their', 'been', 'will', 'have', 'this', 'that',
+    'with', 'from', 'they', 'them', 'were', 'also', 'been', 'into',
+    # brands and organisations that send legitimate mail
+    'google', 'googlemail', 'gmail', 'apple', 'microsoft', 'amazon', 'canva',
+    'adobe', 'salesforce', 'zendesk', 'hubspot', 'slack', 'zoom', 'atlassian',
+    'jira', 'github', 'gitlab', 'dropbox', 'onedrive', 'sharepoint', 'okta',
+    'auth0', 'twilio', 'sendgrid', 'mailchimp', 'openrouter', 'chatgpt',
+    'anthropic', 'claude', 'replit', 'vercel', 'netlify', 'heroku', 'redis',
+    'huggingface', 'ollama', 'scribd', 'netmeds', 'pharmeasy', 'bigbasket',
+    'jiomart', 'internshala', 'naukri', 'unstop', 'practo', 'apollo', 'swing',
+    # geography and language
+    'india', 'indian', 'desi', 'us', 'uk', 'usa',
+    # personal names that appear in ordinary mail
+    'abhishek', 'kumar', 'priya', 'rahul', 'amit', 'sneha', 'vikas', 'anita',
+})
+
+
 def apply_adaptive_keyword_boost(subject: str, body: str, risk_score: int, db_session) -> int:
     """
     Apply adaptive keyword boost to risk score based on learned keywords.
@@ -467,28 +523,37 @@ def apply_adaptive_keyword_boost(subject: str, body: str, risk_score: int, db_se
         Updated risk score with keyword boost (capped at 100)
     """
     from models.email_model import LearnedKeyword
-    
+
     try:
         # Combine subject and body
         combined_text = f"{subject or ''} {body or ''}".lower()
-        
+
         if not combined_text:
             return risk_score
-        
-        # Get all learned keywords from database
+
+        # NON_DISCRIMINATIVE_KEYWORDS: tokens that carry no signal about whether a
+        # message is malicious. Measured on a real mailbox, these were the top
+        # matched_keywords driving keyword_boost: https (255 hits), unsubscribe
+        # (191), data (169), update (165), account (133), link, click, first,
+        # week, access, code, refer, live, learn, develop, support, work, open.
+        # Legitimate infrastructure mail contains all of them, so learning them as
+        # phishing/malware evidence poisoned every sender on earth.
+        NON_DISCRIMINATIVE = NON_DISCRIMINATIVE_KEYWORDS
+
         learned_keywords = db_session.query(LearnedKeyword).all()
-        
+
         if not learned_keywords:
             return risk_score
-        
-        # Calculate keyword boost
+
         keyword_boost = 0
-        
+
         for learned_kw in learned_keywords:
-            # Check if keyword appears in the email text
-            if learned_kw.keyword in combined_text:
+            kw = (learned_kw.keyword or '').strip().lower()
+            if not kw or kw in NON_DISCRIMINATIVE:
+                continue
+            if kw in combined_text:
                 keyword_boost += learned_kw.weight
-        
+
         # Cap keyword-based boost at 20
         keyword_boost = min(keyword_boost, 20)
         
@@ -714,9 +779,16 @@ def get_matched_learned_keywords(subject: str, body: str, db_session) -> List[st
         
         matched = []
         for learned_kw in learned_keywords:
-            if learned_kw.keyword in combined_text:
-                matched.append(learned_kw.keyword)
-        
+            kw = (learned_kw.keyword or '').strip().lower()
+            # Same blocklist as apply_adaptive_keyword_boost. Without it the
+            # learned_keyword_match flag still fired on 638 of 694 real rows,
+            # because https, unsubscribe, data, account and google were in the
+            # table and appear in almost every message ever sent.
+            if not kw or kw in NON_DISCRIMINATIVE_KEYWORDS:
+                continue
+            if kw in combined_text:
+                matched.append(kw)
+
         return matched[:10]  # Limit to top 10 matches
     
     except Exception as e:
