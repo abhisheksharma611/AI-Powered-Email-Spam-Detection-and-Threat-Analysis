@@ -31,6 +31,15 @@ project by **Abhishek Kumar T**. No hosting, no data leaves your machine.
 All screenshots are PNGs under `docs/screenshots/`. App icons: `static/img/logo.png`
 (navbar + login artwork) and `static/img/favicon.ico` (browser tab).
 
+## 🎬 Demo
+
+[![60-second demo of the app](docs/demo-poster.jpg)](docs/demo.mp4)
+
+60 seconds · 60fps · 1920×1080 — every frame generated from code, not screenshotted.
+Click the thumbnail to play.
+
+[⬇️ Download the video (MP4)](docs/demo.mp4)
+
 ## ✨ Features
 
 - **🧠 6-class classification** — legitimate, spam, promotion, phishing, malware,
