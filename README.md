@@ -42,6 +42,10 @@ Click the thumbnail to play.
 
 ## ✨ Features
 
+- **📅 Selectable scan period** — choose 7 days, 30 days, this month, or a custom
+  date range before scanning. Your choice is remembered per account, so the next
+  scan starts where you left off. Gmail's `before:` operator is exclusive, so
+  custom ranges are sent as `before:<end>+1 day` to include the end date.
 - **🧠 6-class classification** — legitimate, spam, promotion, phishing, malware,
   newsletter. Only spam, phishing, and malware count as threats.
 - **🎯 Risk scoring (0–100)** with a visible breakdown: base model score plus
@@ -86,7 +90,7 @@ Browser (Jinja pages + vanilla JS + Chart.js)
   ├── models/predictor.py    0.90 × RoBERTa + 0.10 × Ensemble per batch of 10
   ├── utils/helpers.py       urgency + sender reputation + learned keywords
   │                          + risk breakdown + 30–40 word summary
-  ├── utils/ai_explanation.py  optional NVIDIA NIM summary (15 s timeout, silent skip)
+  ├── utils/ai_explanation.py  optional local Ollama summary (gemma2:2b, silent skip)
   └── models/email_model.py  SQLite via SQLAlchemy (Email, SenderReputation,
                              LearnedKeyword, OAuthStore) + Alembic migrations
 ```
@@ -113,12 +117,13 @@ Login with Google → Dashboard → Scan inbox
 | `/auth/google` | Starts the OAuth flow |
 | `/callback/google` | OAuth callback, stores session, saves encrypted refresh token |
 | `/logout` | 👋 Clears session, time-aware goodbye message |
-| `/dashboard` | 📊 Greeting, clock, scan controls, last-scan banner, recent mail |
+| `/dashboard` | 📊 Greeting, clock, scan-period picker, last-scan banner, recent mail |
 | `/analyze_emails` | 📥 Synchronous Gmail scan (rate-limited 10/min) |
 | `/api/start_analysis` | ⚡ Starts a background scan, returns a task id (5/min) |
 | `/api/analysis_status/<task_id>` | 📶 Progress polling for the frontend bar |
 | `/api/cancel_analysis/<task_id>` | 🛑 Cancels a running scan |
 | `/results` | 📋 Filterable, sortable, paginated table (50/page) |
+| `/results-fragment` | ♻️ Table-only partial, for refreshing rows without the full page |
 | `/last-scan` | 🕘 The most recent 50 mails, same table |
 | `/email/<email_id>` | 🔍 One mail: sanitized body + analysis + AI summary |
 | `/analytics` | 📈 Urgency, risk distribution, 7-day trend |
@@ -193,14 +198,26 @@ pip install -r requirements.txt
 Copy-Item .env.example .env   # then edit .env and fill values
 ```
 
-**4️⃣ Model weights** (code ships without them — download once):
+**4️⃣ Model weights** (code ships without them — download once).
+
+> **⚠️ The `v1.0-models` release is not published yet.** As of this commit the
+> Git tag exists but no Release has been created, so the command below fails with
+> `release not found`. Until it is uploaded you must either train the models
+> yourself (recipe below) or obtain the four weight files by another route.
+
+Once the release is published, this pulls all four weights into `models/`:
 
 ```powershell
 gh release download v1.0-models -D models/ --repo abhisheksharma611/AI-Powered-Email-Spam-Detection-and-Threat-Analysis
 ```
 
 No `gh` CLI? Download the four files from the
-[Releases page](../../releases/tag/v1.0-models) into `models/` manually.
+[Releases page](../../releases) into `models/` manually.
+
+**To retrain instead** (needs `KAGGLE_USERNAME` / `KAGGLE_KEY`, a CUDA GPU, and
+several hours): rebuild the datasets with `models/roberta_train.py`, then run
+`models/roberta_train.py` followed by `models/ensemble_train.py`. The exact
+hyperparameters are in [Training](#-training-exact-recipe) below.
 
 **5️⃣ Database:**
 
@@ -241,7 +258,13 @@ anything. Revoke anytime from Google Account → Security. Never commit
 | `ADMIN_EMAILS` | 👮 Reserved for future admin gating. |
 | `KAGGLE_USERNAME` / `KAGGLE_KEY` | 📦 Only if you re-download public training sources. |
 | `SERVER_NAME` / `PREFERRED_URL_SCHEME` | 🌐 Local OAuth redirect building. |
-| `NVIDIA_NIM_BASE_URL` / `NVIDIA_NIM_API_KEY` / `NVIDIA_NIM_MODEL` | 🤖 Optional per-mail AI summaries. Absent → skipped silently (15 s timeout). |
+| `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | 🤖 Optional per-mail AI summaries, served by **local Ollama**. Defaults to `http://localhost:11434` with `gemma2:2b`. Not running → summaries skipped silently. |
+| `OLLAMA_TIMEOUT` / `OLLAMA_NUM_CTX` / `OLLAMA_NUM_PREDICT` / `OLLAMA_KEEP_ALIVE` | ⚙️ Ollama tuning. Defaults 90 s / 4096 ctx / 100 tokens / 5 m. |
+
+**Which model writes the per-mail summary?** `gemma2:2b`, run by Ollama on your
+own machine at `localhost:11434`. It is not Nemotron and it is not an NVIDIA
+API — nothing is sent to a cloud provider. A commented-out NVIDIA NIM block also
+sits in `utils/ai_explanation.py`; it is inactive and reads no credentials.
 
 Database is SQLite (`emails.db`, auto-created). Sessions are server-side
 filesystem cache — OAuth tokens never sit in browser cookies. Behind a
@@ -384,7 +407,11 @@ AI-Powered-Email-Spam-Detection-and-Threat-Analysis/
 ├── migrations/
 │   ├── env.py
 │   ├── script.py.mako
-│   └── versions/                     # 5 Alembic revisions, single head
+│   └── versions/                     # 8 Alembic revisions, single head
+│       ├── ... sender_reputation, learned_keywords, risk_breakdown,
+│       │   ai_explanation_cache, make_sender_counts_notnull, fix_updated_at_trigger
+│       ├── add_scan_scope.py         # per-user scan period / date range
+│       └── add_scan_sessions.py      # ScanSession table + scan_id on Email
 ├── models/
 │   ├── email_model.py                # Email, SenderReputation, LearnedKeyword, OAuthStore
 │   ├── predictor.py                  # 0.90 RoBERTa + 0.10 ensemble orchestrator
@@ -397,11 +424,12 @@ AI-Powered-Email-Spam-Detection-and-Threat-Analysis/
 │   ├── img/logo.png                  # navbar + login artwork (PNG, 37 KB)
 │   ├── img/favicon.ico               # browser tab icon (ICO, 15 KB)
 │   └── js/main.js                    # polling, charts, timezone sync
-├── templates/                        # 12 Jinja pages (CDN: Bootstrap 5,
+├── templates/                        # 14 Jinja files (CDN: Bootstrap 5,
 │                                      # Font Awesome icons, Chart.js)
 │   ├── base.html / index.html / login.html / dashboard.html
 │   ├── results.html / email_view.html / analytics.html
 │   ├── threat_console.html / bulk_analyze.html
+│   ├── _email_row_macro.html / _email_rows_fragment.html   # row + partial macros
 │   └── 404.html / 500.html / 403.html
 ├── utils/
 │   ├── auth.py / gmail_client.py / helpers.py / ai_explanation.py
