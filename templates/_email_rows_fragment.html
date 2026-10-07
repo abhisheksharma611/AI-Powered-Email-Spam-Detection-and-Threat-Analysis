@@ -1,0 +1,14 @@
+{% from "_email_row_macro.html" import email_row, email_card %}
+{# Renders ONE part per call. Two render_template calls beat one render plus
+   string.split('<table-part>') -- fake tags in the response are clever, not
+   simple, and they break silently if the markup ever changes.
+
+   part='rows'  -> the desktop table <tbody> contents
+   part='cards' -> the mobile card grid contents
+
+   Both are needed: the AJAX filter has to update both halves, or on a phone the
+   cards keep the unfiltered list while the pager beside them says the filter
+   changed. #}
+{% if part == 'cards' %}{% for email in emails %}{{ email_card(email) }}{% endfor %}
+{% else %}{% for email in emails %}{{ email_row(email) }}{% endfor %}
+{% endif %}
