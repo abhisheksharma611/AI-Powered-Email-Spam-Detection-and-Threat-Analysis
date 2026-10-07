@@ -31,15 +31,6 @@ project by **Abhishek Kumar T**. No hosting, no data leaves your machine.
 All screenshots are PNGs under `docs/screenshots/`. App icons: `static/img/logo.png`
 (navbar + login artwork) and `static/img/favicon.ico` (browser tab).
 
-## 🎬 Demo
-
-[![60-second demo of the app](docs/demo-poster.jpg)](docs/demo.mp4)
-
-60 seconds · 60fps · 1920×1080 — every frame generated from code, not screenshotted.
-Click the thumbnail to play.
-
-[⬇️ Download the video (MP4)](docs/demo.mp4)
-
 ## ✨ Features
 
 - **📅 Selectable scan period** — choose 7 days, 30 days, this month, or a custom
@@ -392,8 +383,6 @@ AI-Powered-Email-Spam-Detection-and-Threat-Analysis/
 │   └── workflows/
 │       └── ci.yml                    # compile + migration smoke, no deploy
 ├── docs/
-│   ├── demo.mp4                      # 60s walkthrough (MP4, ~8 MB)
-│   ├── demo-poster.jpg               # thumbnail, frame 0 of the video
 │   └── screenshots/
 │       ├── landing.png               # landing page (PNG)
 │       ├── dashboard.png             # dashboard (PNG)
