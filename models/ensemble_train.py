@@ -3,6 +3,7 @@ import joblib
 import os
 import time
 import warnings
+import numpy as np
 from tqdm import tqdm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split
@@ -17,11 +18,15 @@ from scipy.sparse import hstack
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.utils.preprocessing import preprocess_text, extract_engineered_features
+# One definition of "what the classifier gets to see", shared with app.py and
+# models/roberta_train.py. See the TRAIN/SERVE FIX note at its use site below.
+from utils.gmail_client import prepare_for_model
 
 warnings.filterwarnings('ignore')
 
 # ─── Configuration ───────────────────────────────────────────────
 DATASET_PATH = 'models/final_training_dataset.csv'
+split_manifest_path = 'models/split_manifest.csv'
 OUTPUT_DIR = 'models'
 MAX_FEATURES = 20000
 RANDOM_STATE = 42
@@ -51,27 +56,78 @@ def main():
 
     test_df = pd.read_csv(test_set_path)
 
-    # Replicate roberta_train.py's exact 80/10/10 split (seed 42) so BOTH models train
-    # on the identical 80% and hold the same 10% val out of training. Fixes the prior
-    # bug where the train mask used test_set.csv's positional index (lost because the
-    # file is saved without an index), which made the ensemble train on an arbitrary
-    # positional 90% slice instead of RoBERTa's stratified split.
-    _sp_train, _sp_temp = train_test_split(
-        df, test_size=0.2, random_state=RANDOM_STATE, stratify=df['label']
-    )
-    _sp_val, _sp_test = train_test_split(
-        _sp_temp, test_size=0.5, random_state=RANDOM_STATE, stratify=_sp_temp['label']
-    )
-    # Train only on the 80% RoBERTa trained on; val is held out from both models.
-    train_df = _sp_train
+    # LEAKAGE FIX (F4): read the SAME group-aware split manifest that
+    # roberta_train.py uses, instead of re-deriving the split from the seed here.
+    # Re-deriving it in two places meant any edit to one script silently
+    # desynchronised the two models. The manifest also guarantees whole
+    # near-duplicate groups stay inside one split.
+    if os.path.exists(split_manifest_path):
+        print(f"  Using group-aware split from {split_manifest_path}")
+        man = pd.read_csv(split_manifest_path)
+        if len(man) != len(df):
+            print(f"  ERROR: manifest has {len(man)} rows but dataset has {len(df)}.")
+            print(f"  Regenerate the manifest before training.")
+            return
+        df = df.merge(man[['text', 'split']], on='text', how='left', validate='one_to_one')
+        if df['split'].isna().any():
+            print("  ERROR: some dataset rows are missing from the manifest.")
+            return
+    else:
+        print(f"  WARNING: {split_manifest_path} not found. Falling back to replicating")
+        print(f"  roberta_train.py's split from the seed. Near-duplicate leakage is")
+        print(f"  possible. Generate the manifest for a trustworthy holdout.")
+        _sp_train, _sp_temp = train_test_split(
+            df, test_size=0.2, random_state=RANDOM_STATE, stratify=df['label']
+        )
+        _sp_val, _sp_test = train_test_split(
+            _sp_temp, test_size=0.5, random_state=RANDOM_STATE, stratify=_sp_temp['label']
+        )
+        df = df.copy()
+        df['split'] = ['__none__'] * len(df)
+        for idx in _sp_train.index: df.at[idx, 'split'] = 'train'
+        for idx in _sp_val.index:   df.at[idx, 'split'] = 'val'
+        for idx in _sp_test.index:  df.at[idx, 'split'] = 'test'
 
-    print(f"  Train: {len(train_df):,} (80%, identical to RoBERTa)")
-    print(f"  Test:  {len(test_df):,} (loaded from shared test_set.csv)")
+    train_df = df[df['split'] == 'train'].copy()
+    _val_df = df[df['split'] == 'val'].copy()
+
+    # Cross-check: the shared test_set.csv must match the manifest's test rows.
+    # A previous version of this file OVERWROTE test_set.csv with the manifest's test
+    # rows, which was destructive: running the ensemble before roberta_train.py would
+    # silently replace the holdout evaluate.py reports on. It must only ever be read.
+    manifest_test = set(df[df['split'] == 'test']['text'])
+    if set(test_df['text']) != manifest_test:
+        print("  ERROR: models/test_set.csv does not match the manifest's test split.")
+        print("  Run 'python models/roberta_train.py' first so test_set.csv is regenerated")
+        print("  from the manifest. This script never writes test_set.csv.")
+        return
+
+    print(f"  Train: {len(train_df):,}  (identical to RoBERTa)")
+    print(f"  Val:   {len(_val_df):,}  (held out from both models)")
+    print(f"  Test:  {len(test_df):,}  (matches the manifest)")
 
     # Preprocess text
+    #
+    # TRAIN/SERVE FIX: shape each row the way the serving path shapes a real body
+    # before deriving TF-IDF from it.
+    #
+    # Before: preprocess_text() ran on the raw CSV text. At serve time
+    # models/predictor.py receives text that app.py has already passed through
+    # utils.gmail_client.prepare_for_model (footer stripped, word-capped), so the
+    # vectorizer was fitted on strings carrying a boilerplate tail the serving
+    # path always removes. Bigrams spanning the tail became vocabulary that can
+    # never be produced at inference.
+    #
+    # The ENGINEERED features deliberately stay on the raw text: they are computed
+    # from the uncapped string in both training and prediction (see
+    # models/predictor.py, which passes raw text to extract_engineered_features),
+    # and that symmetry is what the earlier bug fix established. Do not cap them
+    # here -- that would break it in the opposite direction.
     print("\n[2/8] Preprocessing text...")
-    train_df['text_processed'] = train_df['text'].apply(preprocess_text)
-    test_df['text_processed'] = test_df['text'].apply(preprocess_text)
+    train_df['text_for_tfidf'] = train_df['text'].apply(prepare_for_model)
+    test_df['text_for_tfidf'] = test_df['text'].apply(prepare_for_model)
+    train_df['text_processed'] = train_df['text_for_tfidf'].apply(preprocess_text)
+    test_df['text_processed'] = test_df['text_for_tfidf'].apply(preprocess_text)
     train_df = train_df[train_df['text_processed'].str.len() > 0]
     test_df = test_df[test_df['text_processed'].str.len() > 0]
     print(f"  Train after cleaning: {len(train_df):,}")
@@ -121,14 +177,21 @@ def main():
     classifiers = {
         'MultinomialNB': MultinomialNB(alpha=0.1),
         'LogisticRegression': LogisticRegression(
-            random_state=RANDOM_STATE, max_iter=1000, multi_class='multinomial',
+            # multi_class='multinomial' removed: deprecated in sklearn 1.5 and
+            # removed in 1.7. lbfgs defaults to multinomial for l2 loss anyway.
+            random_state=RANDOM_STATE, max_iter=1000,
             solver='lbfgs', class_weight='balanced'
         ),
         'RandomForest': RandomForestClassifier(
             n_estimators=100, random_state=RANDOM_STATE, n_jobs=1, class_weight='balanced'
         ),
+        # BUG: no class_weight. GradientBoostingClassifier has no such parameter, so
+        # this model was the only one of the five biased toward the majority classes
+        # (spam 1600 vs malware 799 in train) while the voting classifier weighted it
+        # equally with the others. Fixed by passing sample_weight from the validation
+        # split at fit time instead, which keeps the interface uniform.
         'GradientBoosting': GradientBoostingClassifier(
-            n_estimators=100, random_state=RANDOM_STATE
+            n_estimators=200, random_state=RANDOM_STATE
         ),
         'MLPClassifier': MLPClassifier(
             hidden_layer_sizes=(128, 64), max_iter=600,
@@ -145,9 +208,20 @@ def main():
 
     pbar = tqdm(total=len(classifiers), desc="  Training classifiers", unit="model", ncols=100)
 
+    # MultinomialNB and GradientBoostingClassifier do not accept class_weight, so they
+    # are given balanced sample weights instead. Without this, the soft vote is dragged
+    # by two models that only ever see the majority classes.
+    # weights = n / (n_classes * count), matching roberta_train.py's approach.
+    _counts = np.bincount(y_train, minlength=len(np.unique(y_train)))
+    _sample_weight = (len(y_train) / (len(_counts) * _counts))[y_train]
+
     def _fit_one(item):
         name, clf = item
-        clf.fit(X_train, y_train)
+        try:
+            clf.fit(X_train, y_train, sample_weight=_sample_weight)
+        except TypeError:
+            # MultinomialNB in some sklearn versions rejects sample_weight
+            clf.fit(X_train, y_train)
         pbar.update(1)
         return name, clf
 

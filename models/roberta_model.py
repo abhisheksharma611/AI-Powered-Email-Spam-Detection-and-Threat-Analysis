@@ -16,7 +16,13 @@ torch.set_num_threads(4)
 
 
 class RobertaModel:
-    def __init__(self, model_path='models/best_roberta_model.pth', max_len=256):
+    # 384, matching the 320-token training ceiling with headroom for the
+    # serving-time word cap. app.py hands this model up to MODEL_INPUT_MAX_WORDS
+    # = 200 words, which measures at 232 tokens at the median tokens/word in the
+    # corpus and 349 at the worst observed ratio. Under the previous 256 the word
+    # cap and the token ceiling disagreed, and the token ceiling won: a 200-word
+    # body still lost its last ~30 words to truncation.
+    def __init__(self, model_path='models/best_roberta_model.pth', max_len=384):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.max_len = max_len
         self.model = None
@@ -52,10 +58,7 @@ class RobertaModel:
             return {'category': 'unknown', 'label': -1, 'confidence': 0.0, 'error': 'Model not loaded'}
 
         try:
-            encoding = self.tokenizer(
-                text, add_special_tokens=True, max_length=self.max_len,
-                padding='max_length', truncation=True, return_tensors='pt'
-            )
+            encoding = self._tokenize(text)
             input_ids = encoding['input_ids'].to(self.device)
             attention_mask = encoding['attention_mask'].to(self.device)
 
@@ -84,10 +87,7 @@ class RobertaModel:
             return {cat: 1.0/6 for cat in CATEGORY_NAMES.values()}
 
         try:
-            encoding = self.tokenizer(
-                text, add_special_tokens=True, max_length=self.max_len,
-                padding='max_length', truncation=True, return_tensors='pt'
-            )
+            encoding = self._tokenize(text)
             input_ids = encoding['input_ids'].to(self.device)
             attention_mask = encoding['attention_mask'].to(self.device)
 
@@ -110,10 +110,7 @@ class RobertaModel:
 
         for i in range(0, len(texts), batch_size):
             batch = texts[i:i+batch_size]
-            encoding = self.tokenizer(
-                batch, add_special_tokens=True, max_length=self.max_len,
-                padding='max_length', truncation=True, return_tensors='pt'
-            )
+            encoding = self._tokenize(batch)
             input_ids = encoding['input_ids'].to(self.device)
             attention_mask = encoding['attention_mask'].to(self.device)
 
@@ -138,6 +135,28 @@ class RobertaModel:
 
         return results
 
+    def _tokenize(self, text_or_texts):
+        """Tokenise with padding to the LONGEST item, not to max_len.
+
+        `padding='max_length'` padded every email out to self.max_len (384)
+        positions even though the corpus median row is 72 tokens -- roughly 5x
+        the token work needed on every single inference. The attention mask
+        makes those positions harmless to the result, so the only thing the
+        padding bought was wasted compute.
+
+        roberta_train.py already adopted dynamic padding for exactly this
+        reason and measured 4.12 -> 7.67 steps/s on the RTX 3050. The inference
+        path never got the same treatment.
+
+        padding=True still pads to the longest row IN THIS BATCH, which is what
+        a stacked batch needs for torch.tensor() to accept it; truncation to
+        max_len is unchanged, so nothing that was previously read is now cut.
+        """
+        return self.tokenizer(
+            text_or_texts, add_special_tokens=True, max_length=self.max_len,
+            padding=True, truncation=True, return_tensors='pt'
+        )
+
     def predict_proba_batch(self, texts, batch_size=None):
         if not self.is_loaded:
             uniform = {cat: 1.0/6 for cat in CATEGORY_NAMES.values()}
@@ -150,10 +169,7 @@ class RobertaModel:
         try:
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i+batch_size]
-                encoding = self.tokenizer(
-                    batch, add_special_tokens=True, max_length=self.max_len,
-                    padding='max_length', truncation=True, return_tensors='pt'
-                )
+                encoding = self._tokenize(batch)
                 input_ids = encoding['input_ids'].to(self.device)
                 attention_mask = encoding['attention_mask'].to(self.device)
 

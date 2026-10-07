@@ -128,7 +128,13 @@ class Predictor:
 
             valid_texts = [processed_texts[i] for i in valid_indices]
             tfidf_vecs = self.vectorizer.transform(valid_texts)
-            eng_features = extract_engineered_features(valid_texts)
+            # BUG B FIX: engineered features must be extracted from RAW text, not the
+            # preprocessed text. preprocess_text() replaces URLs with the token 'URL',
+            # strips digits, and removes punctuation, so features 4 (has_url), 5
+            # (has_phone), 7 (attach), 8 (cred), 9 (deadline) and 10 (prize) were
+            # dead in the batch path. ensemble_train.py:103 and evaluate.py:195 both
+            # pass raw text; this line was the only mismatch.
+            eng_features = extract_engineered_features([texts[i] for i in valid_indices])
             combined = hstack([tfidf_vecs, eng_features])
 
             raw_probs = self.ensemble_model.predict_proba(combined)
@@ -150,7 +156,25 @@ class Predictor:
 
             return results
         except Exception as e:
-            logger.warning(f"Ensemble batch proba failed: {e}")
+            # This used to be logger.warning + return None, which is how a 20010
+            # vs 20006 feature mismatch went unnoticed for an entire session: the
+            # ensemble silently contributed nothing, the 0.90/0.10 blend in
+            # predict_batch never ran, and every classification was pure RoBERTa
+            # while the console showed one unremarkable warning line per batch.
+            # A feature-shape failure is a broken artefact, not a soft condition,
+            # so it is logged at ERROR with the shape that was actually passed.
+            shape = None
+            try:
+                shape = combined.shape
+            except Exception:
+                pass
+            logger.error(
+                "Ensemble batch proba FAILED (%s: %s) shape=%s expected=%s. "
+                "The ensemble contributed NOTHING to these predictions and the "
+                "blend fell back to RoBERTa alone. Retrain with "
+                "'python models/ensemble_train.py'.",
+                type(e).__name__, e, shape,
+                getattr(self.ensemble_model, 'n_features_in_', 'unknown'))
             return None
 
     def predict_batch(self, texts):

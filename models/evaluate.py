@@ -18,6 +18,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models.utils.preprocessing import preprocess_text, extract_engineered_features
 from models.predictor import Predictor
+from utils.gmail_client import prepare_for_model
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -29,8 +30,12 @@ ENSEMBLE_MODEL_PATH = 'models/ensemble_model.joblib'
 VECTORIZER_PATH = 'models/vectorizer.joblib'
 ENCODER_PATH = 'models/encoder.joblib'
 
-MAX_LEN = 256
+# Must match models/roberta_train.py. A model scored under a different ceiling
+# than it was fitted under is not being measured.
+MAX_LEN = 320
 BATCH_SIZE = 16
+# Must match models/roberta_train.py, for the same reason.
+TRAIN_MAX_WORDS = 150
 
 CATEGORY_NAMES = {0: 'Spam', 1: 'Not Spam', 2: 'Promotion', 3: 'Malware', 4: 'Newsletter', 5: 'Phishing'}
 CATEGORY_IDS = {'Spam': 0, 'Not Spam': 1, 'Promotion': 2, 'Malware': 3, 'Newsletter': 4, 'Phishing': 5}
@@ -50,7 +55,9 @@ class EmailDataset(Dataset):
         return len(self.texts)
 
     def __getitem__(self, idx):
-        text = str(self.texts[idx])
+        # Same shaping the trainer applies, so the holdout is scored on the text
+        # the model was fitted to read rather than on a raw CSV string.
+        text = prepare_for_model(str(self.texts[idx]), TRAIN_MAX_WORDS)
         label = self.labels[idx]
         encoding = self.tokenizer(
             text, add_special_tokens=True, max_length=self.max_len,
