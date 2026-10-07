@@ -255,13 +255,13 @@ Running needs four files from **Releases → `v1.0-models`**, placed in `models/
 | File | Size | Role |
 |---|---|---|
 | `best_roberta_model.pth` | ~476 MB | Fine-tuned `roberta-base`, 6 labels, max_len 256 |
-| `ensemble_model.joblib` | ~192 MB | 5-head soft-voting ensemble (NB, LogReg, RF, GB, MLP) |
-| `vectorizer.joblib` | ~1.3 MB | 20k TF-IDF (1–2gram) vocabulary |
+| `ensemble_model.joblib` | ~106 MB | 5-head soft-voting ensemble (NB, LogReg, RF, GB, MLP) |
+| `vectorizer.joblib` | ~3.6 MB | 20k TF-IDF (1–2gram) vocabulary |
 | `encoder.joblib` | tiny | Label map |
 
 ### 🏋️ Training (exact recipe)
 
-- **Split:** stratified 80/10/10, seed 42. `test_set.csv` is frozen —
+- **Split:** stratified 80/10/10, seed 42. `test_set.csv` is a frozen holdout —
   eval-only, never trained on.
 - **RoBERTa** (`models/roberta_train.py`): `roberta-base`, batch 8 ×
   grad-accum 2 (effective 16), AdamW LR 2e-5, 6 epochs, early stop
@@ -280,10 +280,21 @@ Running needs four files from **Releases → `v1.0-models`**, placed in `models/
 
 ## 🗃️ Dataset
 
-`models/final_training_dataset.csv` — **30,028 rows** merged from public
-spam/phishing collections plus author-written synthetic mails, labelled
-into 6 classes (spam 6457, legitimate 5532, promotion 5208, phishing 4837,
-newsletter 4502, malware 3492). Columns: `text,label,category`.
+**The dataset is not committed to this repository.** Both CSVs are excluded via
+`.gitignore` — clone the repo and the app runs fine, because model weights come
+from the Release and the data is training-only.
+
+To retrain, rebuild it from the public sources listed in
+`models/roberta_train.py` (needs your own `KAGGLE_USERNAME` / `KAGGLE_KEY`).
+
+Current shape of `models/final_training_dataset.csv` — **9,280 rows**, merged
+from public spam/phishing collections plus author-written synthetic mails,
+labelled into 6 classes (spam 2215, not spam 1890, newsletter 1658,
+promotion 1627, malware 965, phishing 925). Columns: `text,label,category`.
+
+`models/test_set.csv` — **975 rows**, the same 6 classes in the same proportion
+(spam 233, not spam 200, newsletter 173, promotion 171, malware 101,
+phishing 97). Frozen: evaluation only, never trained on.
 
 ## 🧮 Scoring Engine (exactly as coded)
 
@@ -380,9 +391,7 @@ AI-Powered-Email-Spam-Detection-and-Threat-Analysis/
 │   ├── roberta_model.py              # loader + batched inference
 │   ├── roberta_train.py / ensemble_train.py / evaluate.py
 │   ├── utils/preprocessing.py        # shared train/serve text features
-│   ├── final_training_dataset.csv    # 30k rows, committed
-│   └── test_set.csv                  # frozen holdout, committed
-│   └── (*.pth / *.joblib ignored — from Releases)
+│   └── (*.csv datasets, *.pth, *.joblib ignored — rebuild data, weights from Releases)
 ├── static/
 │   ├── css/style.css                 # custom theme (54 KB)
 │   ├── img/logo.png                  # navbar + login artwork (PNG, 37 KB)

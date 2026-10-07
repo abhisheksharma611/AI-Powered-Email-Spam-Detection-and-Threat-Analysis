@@ -187,3 +187,7 @@ new_report*.docx
 SpamProtection*.pdf
 AI-Powered*.pdf
 AI-Powered*.docx
+
+# Datasets - rebuild from public sources, not committed (weights come from Releases)
+models/final_training_dataset.csv
+models/test_set.csv
