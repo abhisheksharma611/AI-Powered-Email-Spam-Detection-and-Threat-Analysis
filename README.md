@@ -198,21 +198,14 @@ pip install -r requirements.txt
 Copy-Item .env.example .env   # then edit .env and fill values
 ```
 
-**4️⃣ Model weights** (code ships without them — download once).
-
-> **⚠️ The `v1.0-models` release is not published yet.** As of this commit the
-> Git tag exists but no Release has been created, so the command below fails with
-> `release not found`. Until it is uploaded you must either train the models
-> yourself (recipe below) or obtain the four weight files by another route.
-
-Once the release is published, this pulls all four weights into `models/`:
+**4️⃣ Model weights** (code ships without them — download once):
 
 ```powershell
 gh release download v1.0-models -D models/ --repo abhisheksharma611/AI-Powered-Email-Spam-Detection-and-Threat-Analysis
 ```
 
 No `gh` CLI? Download the four files from the
-[Releases page](../../releases) into `models/` manually.
+[Releases page](../../releases/tag/v1.0-models) into `models/` manually.
 
 **To retrain instead** (needs `KAGGLE_USERNAME` / `KAGGLE_KEY`, a CUDA GPU, and
 several hours): rebuild the datasets with `models/roberta_train.py`, then run
@@ -399,6 +392,8 @@ AI-Powered-Email-Spam-Detection-and-Threat-Analysis/
 │   └── workflows/
 │       └── ci.yml                    # compile + migration smoke, no deploy
 ├── docs/
+│   ├── demo.mp4                      # 60s walkthrough (MP4, ~8 MB)
+│   ├── demo-poster.jpg               # thumbnail, frame 0 of the video
 │   └── screenshots/
 │       ├── landing.png               # landing page (PNG)
 │       ├── dashboard.png             # dashboard (PNG)
