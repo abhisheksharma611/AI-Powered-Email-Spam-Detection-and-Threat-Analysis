@@ -3,6 +3,38 @@
 {% block title %}Analysis Results - SpamProtection{% endblock %}
 
 {% block content %}
+{# Which route owns the paging for this render. results_page and last_scan_page
+   show the same table over the same scan, so every filter, sort and page link has
+   to post back to whichever one is being viewed -- otherwise "Next" from Last
+   Scan jumps to a different page. Set once, here, because the filter dropdowns
+   need it too and they sit above the pager. #}
+{% set pag_endpoint = 'last_scan_page' if is_last_scan else 'results_page' %}
+{% from "_email_row_macro.html" import email_row, email_card %}
+
+{# Icon, label and colour per category, and per sort. Hoisted to the top because
+   BOTH the pager (which names the active category) and the filter controls
+   further down need them. Defining this beside the dropdown left the pager
+   referring to an undefined `cur`, which raised at render time. #}
+{% set cat_meta = {
+    'all':        ('fa-tag',                 'All Categories', ''),
+    'spam':       ('fa-exclamation-triangle', 'Spam',           'var(--color-spam)'),
+    'phishing':   ('fa-skull-crossbones',    'Phishing',       'var(--color-phishing)'),
+    'malware':    ('fa-virus',               'Malware',        'var(--color-malware)'),
+    'promotion':  ('fa-bullhorn',            'Promotion',      'var(--color-promotion)'),
+    'newsletter': ('fa-newspaper',           'Newsletter',     'var(--color-newsletter)'),
+    'legitimate': ('fa-check-circle',        'Not Spam',       'var(--color-legitimate)')
+} %}
+{% set cur = cat_meta.get(current_category, cat_meta['all']) %}
+{# "No phishing emails in this scan". Built from cat_meta rather than a second
+   copy of the category names, which is what the empty state used to duplicate.
+   lower() gives the noun ("No Phishing emails" reads wrong); the All/Threats/Safe
+   buttons have no category, so they get their own noun. #}
+{% set empty_noun = cur[1]|lower if current_category and current_category != 'all'
+                     else ('threat' if current_view == 'threat'
+                           else ('safe' if current_view == 'safe' else '')) %}
+{% set empty_filter_label = 'No %s emails in this scan'|format(empty_noun)
+                            if empty_noun else 'No emails in this scan' %}
+
 <div class="container mt-4">
     <!-- Results Header -->
     <div class="row mb-4">
@@ -16,6 +48,9 @@
                             </h2>
                             <p class="mb-0 fw-medium" style="color: rgba(255,255,255,0.9);">
                                 Analysis completed on <span class="utc-date" data-utc="{{ summary.analysis_date_utc }}">{{ summary.analysis_date if summary else 'N/A' }}</span>
+                                {% if scope_label %}
+                                &nbsp;&middot;&nbsp;for {{ scope_label }}
+                                {% endif %}
                                 {% if summary and summary.processing_time %}
                                 • Processed in {{ summary.processing_time }} seconds
                                 {% endif %}
@@ -96,8 +131,77 @@
     </div>
     {% endif %}
 
-    <!-- Enhanced Email Results Table -->
-    {% if results %}
+    <!-- Pagination Controls -->
+            {# THE COUNT LINE IS ALWAYS SHOWN.
+               It used to live inside `{% if total_pages > 1 %}`, so selecting a
+               category with 4 matches produced a page with no "Showing" text at
+               all -- the Category Distribution strip said "Spam: 4" and the table
+               simply stopped, with nothing confirming you had all four. The line
+               is the proof that the list and the count agree, so it cannot be
+               conditional on there being more than one page. #}
+            <div class="pager-bar mt-3 px-3 py-2 mb-3 d-flex justify-content-between
+                        align-items-center flex-wrap gap-2">
+                <span class="pager-count">
+                    {% if total %}
+                        Showing <strong>{{ ((page - 1) * page_size) + 1 }}&ndash;{{ [page * page_size, total]|min }}</strong>
+                        of <strong>{{ total }}</strong> {{ 'email' if total == 1 else 'emails' }}
+                        {%- if total_pages > 1 %} &middot; page {{ page }} of {{ total_pages }}{% endif %}
+                        {%- if current_category and current_category != 'all' %}
+                            &middot; filtered to <strong>{{ cur[1] }}</strong>
+                        {%- endif %}
+                    {% else %}
+                        {# Names the class, so an empty list reads as an answer
+                           rather than a failure. #}
+                        {{ empty_filter_label }}
+                    {% endif %}
+                </span>
+                {% if total_pages and total_pages > 1 %}
+                {# Pagination must post back to whichever page we are on. Every link
+                   here used to point at results_page and drop `scope`, so Next from
+                   Last Scan jumped to a different page entirely. pag_endpoint is
+                   set once at the top of this template, where the filter
+                   dropdowns can also reach it. #}
+                <nav aria-label="Results pagination">
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if has_prev %}
+                        <li class="page-item">
+                            <a class="page-link" data-ajax-nav href="{{ url_for(pag_endpoint, page=page-1, category=current_category, sort=current_sort, scope=current_scope, view=current_view) }}">
+                                <i class="fas fa-chevron-left"></i> Previous
+                            </a>
+                        </li>
+                        {% endif %}
+                        {% for p in range(1, total_pages + 1) %}
+                            {% if p == page %}
+                            <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                            {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                            <li class="page-item">
+                                <a class="page-link" data-ajax-nav href="{{ url_for(pag_endpoint, page=p, category=current_category, sort=current_sort, scope=current_scope, view=current_view) }}">{{ p }}</a>
+                            </li>
+                            {% elif p == page - 3 or p == page + 3 %}
+                            <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+                        {% if has_next %}
+                        <li class="page-item">
+                            <a class="page-link" data-ajax-nav href="{{ url_for(pag_endpoint, page=page+1, category=current_category, sort=current_sort, scope=current_scope, view=current_view) }}">
+                                Next <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
+            </div>
+            
+<!-- Enhanced Email Results Table -->
+    {# Gated on scan_total, NOT on `results`.
+       `results` is the FILTERED page slice, so a category with zero emails made
+       this false and the template swapped in the "No Results" card -- losing the
+       filter controls, the category dropdown and the pager entirely, and telling
+       the user there were no emails when the scan had dozens.
+       scan_total is the whole scan, so the table shell always renders when there
+       is a scan at all, and a zero-match filter shows an empty body instead. #}
+    {% if scan_total %}
     <div class="row">
         <div class="col-12">
             <div class="card">
@@ -105,150 +209,94 @@
                     <h5 class="mb-0 fw-bold">
                         <i class="fas fa-list"></i> Email Analysis Details
                         {% if current_category and current_category != 'all' %}
-                        <span class="badge bg-{{ current_category }} ms-2">
-                            Filter: {{ current_category }}
+                        <span class="badge bg-{{ current_category }} ms-2" id="currentFilterBadge">
+                            Filter: {{ cur[1] }}
                         </span>
+                        {% else %}
+                        {# Kept in the DOM but empty so the AJAX swap can write
+                           the label without re-creating the element. #}
+                        <span class="badge ms-2 d-none" id="currentFilterBadge"></span>
                         {% endif %}
                     </h5>
                     <div class="d-flex align-items-center gap-2 filter-controls">
                         <!-- Category Filter Dropdown -->
                         <div class="dropdown category-filter-dropdown d-inline-block">
                             <button class="form-select form-select-sm text-start" type="button" data-bs-toggle="dropdown" id="categoryFilterBtn" style="cursor: pointer; text-align: left !important;">
-                                <i class="fas fa-tag me-1"></i> <span id="categoryFilterLabel">All Categories</span>
+                                <i class="fas {{ cur[0] }} me-1"{% if cur[2] %} style="color: {{ cur[2] }};"{% endif %}></i> <span id="categoryFilterLabel">{{ cur[1] }}</span>
                             </button>
+                            {# SERVER-SIDE LINKS, NOT A CLIENT-SIDE FILTER.
+                               This used to be onclick="selectCategory(...)", which
+                               only walked the rows already in the DOM and set
+                               display:none on the rest. With 50 rows per page that
+                               is blind to every other page, so picking a category
+                               with 4 emails showed whichever 2 of them happened to
+                               be on the current page -- and the pager still said
+                               "1-50 of 180". Only the server can count across the
+                               whole scan and decide whether 4 fits on one page.
+
+                               `page` is deliberately omitted so the count restarts
+                               at 1: a filter change makes the old page number
+                               meaningless. #}
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" onclick="selectCategory('all', 'fa-tag', 'All Categories'); return false;"><i class="fas fa-tag me-2"></i> All Categories</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="selectCategory('spam', 'fa-exclamation-triangle', 'Spam'); return false;"><i class="fas fa-exclamation-triangle me-2" style="color: var(--color-spam);"></i> Spam</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="selectCategory('phishing', 'fa-skull-crossbones', 'Phishing'); return false;"><i class="fas fa-skull-crossbones me-2" style="color: var(--color-phishing);"></i> Phishing</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="selectCategory('malware', 'fa-virus', 'Malware'); return false;"><i class="fas fa-virus me-2" style="color: var(--color-malware);"></i> Malware</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="selectCategory('promotion', 'fa-bullhorn', 'Promotion'); return false;"><i class="fas fa-bullhorn me-2" style="color: var(--color-promotion);"></i> Promotion</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="selectCategory('newsletter', 'fa-newspaper', 'Newsletter'); return false;"><i class="fas fa-newspaper me-2" style="color: var(--color-newsletter);"></i> Newsletter</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="selectCategory('legitimate', 'fa-check-circle', 'Not Spam'); return false;"><i class="fas fa-check-circle me-2" style="color: var(--color-legitimate);"></i> Not Spam</a></li>
+                                {% for key, meta in cat_meta.items() %}
+                                <li>
+                                    <a class="dropdown-item{% if current_category == key %} active{% endif %}" data-ajax-nav data-filter-link data-keep="category"
+                                       href="{{ url_for(pag_endpoint, category=key, sort=current_sort, scope=current_scope) }}">
+                                        <i class="fas {{ meta[0] }} me-2"{% if meta[2] %} style="color: {{ meta[2] }};"{% endif %}></i> {{ meta[1] }}
+                                    </a>
+                                </li>
+                                {% endfor %}
                             </ul>
                         </div>
                         
                         <!-- Sort Dropdown -->
                         <div class="dropdown sort-filter-dropdown d-inline-block">
+                            {% set sort_meta = {
+                                'date':    ('fa-calendar', 'Newest First'),
+                                'urgency': ('fa-fire',     'Urgency (High)')
+                            } %}
+                            {% set scur = sort_meta.get(current_sort, sort_meta['date']) %}
                             <button class="form-select form-select-sm text-start" type="button" data-bs-toggle="dropdown" id="sortFilterBtn" style="cursor: pointer; text-align: left !important;">
-                                <i class="fas fa-calendar me-1"></i> <span id="sortFilterLabel">Newest First</span>
+                                <i class="fas {{ scur[0] }} me-1"></i> <span id="sortFilterLabel">{{ scur[1] }}</span>
                             </button>
+                            {# Sorting is a whole-scan ordering, so it belongs on the
+                               server for the same reason the category filter does:
+                               reordering 50 rows in place cannot sort 180. #}
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#" onclick="selectSort('date', 'fa-calendar', 'Newest First'); return false;"><i class="fas fa-calendar me-2"></i> Newest First</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="selectSort('urgency', 'fa-fire', 'Urgency (High)'); return false;"><i class="fas fa-fire me-2 text-danger"></i> Urgency (High)</a></li>
+                                {% for key, meta in sort_meta.items() %}
+                                <li>
+                                    <a class="dropdown-item{% if current_sort == key %} active{% endif %}" data-ajax-nav data-filter-link data-keep="sort"
+                                       href="{{ url_for(pag_endpoint, category=current_category, sort=key, scope=current_scope) }}">
+                                        <i class="fas {{ meta[0] }} me-2{% if key == 'urgency' %} text-danger{% endif %}"></i> {{ meta[1] }}
+                                    </a>
+                                </li>
+                                {% endfor %}
                             </ul>
                         </div>
                         
-                        <!-- Legacy Threat/Safe Filter (client-side) -->
+                        {# All / Threats / Safe -- server-side links, same reasoning as
+                           the category dropdown. These were onclick="filterEmails()"
+                           which only walked the rows already in the DOM, so it
+                           counted just the current page. Threat/Safe deliberately
+                           drop Promotion and Newsletter: those are commercial, and
+                           the is_spam field counts them as threats. #}
                         <div class="btn-group btn-group-sm filter-buttons">
-                            <button class="btn btn-light active text-dark fw-bold" onclick="filterEmails('all', event)">All</button>
-                            <button class="btn btn-light text-danger fw-bold" onclick="filterEmails('threat', event)">Threats</button>
-                            <button class="btn btn-light text-success fw-bold" onclick="filterEmails('safe', event)">Safe</button>
+                            <a data-ajax-nav data-filter-link data-keep="view" class="btn btn-light text-dark fw-bold{% if current_view == 'all' %} active{% endif %}"
+                               href="{{ url_for(pag_endpoint, category=current_category, sort=current_sort, scope=current_scope, view='all') }}">All</a>
+                            <a data-ajax-nav data-filter-link data-keep="view" class="btn btn-light text-danger fw-bold{% if current_view == 'threat' %} active{% endif %}"
+                               href="{{ url_for(pag_endpoint, category=current_category, sort=current_sort, scope=current_scope, view='threat') }}">Threats</a>
+                            <a data-ajax-nav data-filter-link data-keep="view" class="btn btn-light text-success fw-bold{% if current_view == 'safe' %} active{% endif %}"
+                               href="{{ url_for(pag_endpoint, category=current_category, sort=current_sort, scope=current_scope, view='safe') }}">Safe</a>
                         </div>
                     </div>
                 </div>
                 <div class="card-body p-0">
                     <!-- Mobile Card Grid View (shown on mobile) -->
                     <div class="email-card-grid d-md-none">
-                        {% for email in results %}
-                        <a href="{{ url_for('view_email', email_id=email.id) }}" class="text-decoration-none">
-                        <div class="email-card" data-type="{{ 'threat' if email.is_spam else 'safe' }}" data-category="{{ email.category }}" data-urgency="{{ email.urgency_score|default(0) }}" data-date="{{ email.sortable_date }}">
-                            <!-- Row 1: Subject -->
-                            <div class="email-card-subject-row">
-                                <small class="text-active label-inline">📧 Email Subject:</small>
-                                <span class="email-card-subject-text text-primary">{{ email.subject[:100] }}{% if email.subject|length > 100 %}...{% endif %}</span>
-                            </div>
-                            <!-- Row 2: Email Snippet/Preview -->
-                            {% if email.snippet %}
-                            <div class="email-card-snippet">
-                                <small class="text-active label-inline">📝 Body:</small>
-                                {{ email.snippet[:150] }}{% if email.snippet|length > 150 %}...{% endif %}
-                            </div>
-                            {% endif %}
-                            <!-- Row 3: Sender + Date -->
-                            <div class="email-card-sender-row">
-                                <div>
-                                    <small class="text-active label-inline">👤 Sender:</small>
-                                    <span class="email-card-sender" title="{{ email.sender }}">{{ email.sender }}</span>
-                                </div>
-                                <div class="text-end">
-                                    <small class="text-active label-inline">📅 Date:</small>
-                                    <span class="email-card-date utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</span>
-                                </div>
-                            </div>
-                            <!-- Row 4: Badges -->
-                            <div class="email-card-badges">
-                                <small class="text-active label-inline">🏷️ Category:</small>
-                                {% set display_name = {
-                                    'legitimate': 'Not Spam',
-                                    'promotion': 'Promotion',
-                                    'phishing': 'Phishing',
-                                    'malware': 'Malware',
-                                    'newsletter': 'Newsletter',
-                                    'spam': 'Spam'
-                                } %}
-                                {% set category_colors = {
-                                    'legitimate': 'success',
-                                    'promotion': 'warning',
-                                    'phishing': 'phishing',
-                                    'malware': 'purple',
-                                    'newsletter': 'newsletter',
-                                    'spam': 'danger'
-                                } %}
-                                {% set risk_colors = {
-                                    'High': 'danger',
-                                    'Medium': 'warning',
-                                    'Low': 'success'
-                                } %}
-                                {% set risk_emojis = {
-                                    'High': '🔴',
-                                    'Medium': '⚠️',
-                                    'Low': '🟢'
-                                } %}
-                                {% set urgency_colors = {
-                                    'High': 'danger',
-                                    'Medium': 'warning text-dark',
-                                    'Low': 'success'
-                                } %}
-                                {% set urgency_emojis = {
-                                    'High': '🔥',
-                                    'Medium': '⚡',
-                                    'Low': '📩'
-                                } %}
-                                <span class="badge bg-{{ category_colors.get(email.category, 'secondary') }} badge-sm{{ ' text-dark' if email.category == 'promotion' else '' }}">{{ display_name.get(email.category, email.category.title()[:4]) }}</span>
-                                <small class="text-active label-inline ms-2">⚠️ Risk:</small>
-                                <span class="badge bg-{{ risk_colors.get(email.risk_level, 'secondary') }} badge-sm{{ ' text-dark' if email.risk_level == 'Medium' else '' }}">{{ risk_emojis.get(email.risk_level, '') }} {{ (email.risk_level or '')[:6] }}</span>
-                                <small class="text-active label-inline">🔥 Urgency:</small>
-                                <span class="badge bg-{{ urgency_colors.get(email.urgency_level, 'secondary') }} badge-sm">{{ urgency_emojis.get(email.urgency_level, '📧') }} {{ (email.urgency_level or 'Low')[:6] }}</span>
-                            </div>
-                            <!-- Row 5: Confidence -->
-                            <div class="email-card-confidence">
-                                <div class="confidence-label-row">
-                                    <small class="text-active">✅ Confidence:</small>
-                                    <span class="confidence-text fw-bold">{{ "%.0f"|format(email.confidence) }}%
-                                    {% if email.confidence >= 80 %}
-                                        <i class="fas fa-check-circle text-success"></i>
-                                    {% elif email.confidence >= 50 %}
-                                        <i class="fas fa-exclamation-circle text-warning"></i>
-                                    {% else %}
-                                        <i class="fas fa-question-circle text-danger"></i>
-                                    {% endif %}
-                                    </span>
-                                </div>
-                                <div class="progress confidence-progress">
-                                    <div class="progress-bar 
-                                        {% if email.confidence > 80 %}bg-success
-                                        {% elif email.confidence > 60 %}bg-warning
-                                        {% else %}bg-danger{% endif %}" 
-                                        style="width: {{ email.confidence }}%">
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        </a>
-                        {% endfor %}
+                        {% for email in results %}{{ email_card(email) }}{% endfor %}
                     </div>
                     <!-- Desktop Table View (shown on desktop) -->
-                    <div class="table-responsive d-none d-md-block">
+                    <div class="table-responsive d-none d-md-block" id="emailTableWrap">
                         <table class="table table-hover mb-0 table-fixed">
                             <thead class="table-dark">
                                 <tr>
@@ -262,154 +310,21 @@
                                 </tr>
                             </thead>
                             <tbody id="emailResults">
-                                {% for email in results %}
-                                <tr class="email-row align-middle" data-type="{{ 'threat' if email.is_spam else 'safe' }}" data-category="{{ email.category }}" data-urgency="{{ email.urgency_score|default(0) }}" data-date="{{ email.sortable_date }}">
-                            <td data-label="Subject">
-                                <div class="email-subject-cell">
-                                    <div class="d-flex align-items-start">
-                                        <div class="category-emoji me-2 fs-5">
-                                            {% if email.category == 'legitimate' %}
-                                                <i class="fas fa-check-circle category-legitimate"></i>
-                                            {% elif email.category == 'promotion' %}
-                                                <i class="fas fa-bullhorn category-promotion"></i>
-                                            {% elif email.category == 'phishing' %}
-                                                <i class="fas fa-skull-crossbones category-phishing"></i>
-                                            {% elif email.category == 'malware' %}
-                                                <i class="fas fa-virus category-malware"></i>
-                                            {% elif email.category == 'newsletter' %}
-                                                <i class="fas fa-newspaper category-newsletter"></i>
-                                            {% elif email.category == 'spam' %}
-                                                <i class="fas fa-exclamation-triangle category-spam"></i>
-                                            {% else %}
-                                                <i class="fas fa-tag text-secondary"></i>
-                                            {% endif %}
-                                        </div>
-                                        <div class="flex-grow-1">
-                                            <a href="{{ url_for('view_email', email_id=email.id) }}" class="text-decoration-none email-subject-link" data-email-id="{{ email.id }}">
-                                                <strong class="d-block text-truncate text-primary" title="{{ email.subject }}">
-                                                    {{ email.subject[:30] }}{% if email.subject|length > 30 %}...{% endif %}
-                                                </strong>
-                                            </a>
-                                            {% if email.snippet %}
-                                            <small class="text-active d-block mt-1 text-truncate">
-                                                {{ email.snippet[:30] }}{% if email.snippet|length > 30 %}...{% endif %}
-                                            </small>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                </div>
-                            </td>
-                                    <td data-label="Sender">
-                                        <div class="cell-align">
-                                            <span class="d-inline-block text-truncate" style="max-width: 220px;" title="{{ email.sender }}">
-                                                {{ email.sender }}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td data-label="Date">
-                                        <div class="cell-align">
-                                            <small class="text-active utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</small>
-                                        </div>
-                                    </td>
-                                    <td data-label="Category">
-                                        <div class="cell-align">
-                                            {% set display_name = {
-                                                'legitimate': 'Not Spam',
-                                                'promotion': 'Promotion',
-                                                'phishing': 'Phishing',
-                                                'malware': 'Malware',
-                                                'newsletter': 'Newsletter',
-                                                'spam': 'Spam'
-                                            } %}
-                                            {% set category_colors = {
-                                                'legitimate': 'success',
-                                                'promotion': 'warning',
-                                                'phishing': 'phishing',
-                                                'malware': 'purple',
-                                                'newsletter': 'newsletter',
-                                                'spam': 'danger'
-                                            } %}
-                                             {% set category_icons = {
-                                                 'legitimate': 'check-circle',
-                                                 'promotion': 'bullhorn',
-                                                 'phishing': 'skull-crossbones',
-                                                 'malware': 'virus',
-                                                 'newsletter': 'newspaper',
-                                                 'spam': 'exclamation-triangle'
-                                             } %}
-                                              <span class="badge bg-{{ category_colors.get(email.category, 'secondary') }} d-flex align-items-center justify-content-center{{ ' text-dark' if email.category == 'promotion' else '' }}">
-                                                 <i class="fas fa-{{ category_icons.get(email.category, 'tag') }} me-1"></i> {{ display_name.get(email.category, email.category.title()) }}
-                                             </span>
-                                        </div>
-                                    </td>
-                                    <td data-label="Risk">
-                                        <div class="cell-align">
-                                            {% set risk_colors = {
-                                                'High': 'danger',
-                                                'Medium': 'warning',
-                                                'Low': 'success'
-                                            } %}
-                                            {% set risk_icons = {
-                                                'High': 'exclamation-triangle',
-                                                'Medium': 'exclamation-circle',
-                                                'Low': 'check-circle'
-                                            } %}
-                                            {% set risk_emojis = {
-                                                'High': '🔴',
-                                                'Medium': '⚠️',
-                                                'Low': '🟢'
-                                            } %}
-                                            <span class="badge bg-{{ risk_colors.get(email.risk_level, 'secondary') }} d-flex align-items-center justify-content-center{{ ' text-dark' if email.risk_level == 'Medium' else '' }}">
-                                                <span class="me-1">{{ risk_emojis.get(email.risk_level, '❓') }}</span>
-                                                {{ email.risk_level }}
-                                            </span>
-                                            <small class="text-active d-block mt-1 text-center">{{ email.risk_score }}/100</small>
-                                        </div>
-                                    </td>
-                                    <td data-label="Urgency">
-                                        <div class="cell-align">
-                                            {% set urgency_colors = {
-                                                'High': 'danger',
-                                                'Medium': 'warning text-dark',
-                                                'Low': 'success'
-                                            } %}
-                                            {% set urgency_emojis = {
-                                                'High': '🔥',
-                                                'Medium': '⚡',
-                                                'Low': '📩'
-                                            } %}
-                                            <span class="badge bg-{{ urgency_colors.get(email.urgency_level, 'secondary') }} d-flex align-items-center justify-content-center">
-                                                <span class="me-1">{{ urgency_emojis.get(email.urgency_level, '📧') }}</span>
-                                                {{ email.urgency_level|default('Low') }}
-                                            </span>
-                                            <small class="text-active d-block mt-1 text-center">{{ email.urgency_score|default(0) }}/100</small>
-                                        </div>
-                                    </td>
-                                    <td data-label="Confidence">
-                                        <div class="cell-align confidence-cell">
-                                            <div class="confidence-content">
-                                                <small class="fw-bold">{{ "%.0f"|format(email.confidence) }}%</small>
-                                                {% if email.confidence > 80 %}
-                                                    <i class="fas fa-check-circle text-success"></i>
-                                                {% elif email.confidence > 60 %}
-                                                    <i class="fas fa-exclamation-circle text-warning"></i>
-                                                {% else %}
-                                                    <i class="fas fa-question-circle text-danger"></i>
-                                                {% endif %}
-                                            </div>
-                                            <div class="progress progress-sm">
-                                                <div class="progress-bar progress-bar-striped 
-                                                    {% if email.confidence >= 80 %}bg-success
-                                                    {% elif email.confidence >= 50 %}bg-warning
-                                                    {% else %}bg-danger{% endif %}"
-                                                    style="width: {{ email.confidence }}%" 
-                                                    role="progressbar">
-                                                </div>
-                                            </div>
-                                        </div>
+                                {% for email in results %}{{ email_row(email) }}{% endfor %}
+                                {# Reachable now that a zero-match filter renders
+                                   instead of redirecting. Says which class is
+                                   empty so it reads as an answer, not a fault. #}
+                                {% if not results %}
+                                <tr id="emailResultsEmpty">
+                                    <td colspan="7" class="text-center py-5">
+                                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                                        <p class="mb-1 fw-bold">{{ empty_filter_label }}</p>
+                                        <small class="text-muted">
+                                            The rest of this scan is unchanged above.
+                                        </small>
                                     </td>
                                 </tr>
-                                {% endfor %}
+                                {% endif %}
                             </tbody>
                         </table>
                     </div>
@@ -456,53 +371,6 @@
                 </div>
             </div>
             
-            <!-- Pagination Controls -->
-            {% if total_pages and total_pages > 1 %}
-            <div class="card mt-3">
-                <div class="card-body py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="text-active">
-                            Showing {{ ((page - 1) * 20) + 1 }}-{{ [page * 20, total_emails]|min }} of {{ total_emails }} emails
-                        </small>
-                        <nav aria-label="Results pagination">
-                            <ul class="pagination pagination-sm mb-0">
-                                {% if has_prev %}
-                                <li class="page-item">
-                                    <a class="page-link" href="{{ url_for('results_page', page=page-1, category=current_category, sort=current_sort) }}">
-                                        <i class="fas fa-chevron-left"></i> Previous
-                                    </a>
-                                </li>
-                                {% endif %}
-                                
-                                {% for p in range(1, total_pages + 1) %}
-                                    {% if p == page %}
-                                    <li class="page-item active">
-                                        <span class="page-link">{{ p }}</span>
-                                    </li>
-                                    {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
-                                    <li class="page-item">
-                                        <a class="page-link" href="{{ url_for('results_page', page=p, category=current_category, sort=current_sort) }}">{{ p }}</a>
-                                    </li>
-                                    {% elif p == page - 3 or p == page + 3 %}
-                                    <li class="page-item disabled">
-                                        <span class="page-link">...</span>
-                                    </li>
-                                    {% endif %}
-                                {% endfor %}
-                                
-                                {% if has_next %}
-                                <li class="page-item">
-                                    <a class="page-link" href="{{ url_for('results_page', page=page+1, category=current_category, sort=current_sort) }}">
-                                        Next <i class="fas fa-chevron-right"></i>
-                                    </a>
-                                </li>
-                                {% endif %}
-                            </ul>
-                        </nav>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
             </div>
         </div>
     </div>
@@ -985,7 +853,11 @@
     .table-responsive {
         font-size: 0.875rem;
     }
-    
+
+    /* The hover and active rules above are the only ones. A second pair used to
+       sit here painting the links solid blue -- identical to the strip they sit
+       on, so the controls vanished into the background. */
+
     .email-subject strong {
         font-size: 0.9rem;
     }
@@ -1054,6 +926,118 @@
     }
 }
 
+/* ── The table's horizontal scrollbar: removed ───────────────────
+   .table-responsive is overflow-x:auto, so the browser drew a bar under the
+   table -- and Chrome and Firefox both auto-hide that bar and reveal it on
+   hover, so it flickered in and out every time the pointer crossed the rows.
+   A permanent thin bar was tried first; the bar itself is what was unwanted,
+   so it is now hidden outright.
+
+   The scroll CAPABILITY stays. scrollbar-width and ::-webkit-scrollbar only
+   remove the visual chrome -- overflow-x is still auto, so if the viewport
+   is ever too narrow the table can still be swiped sideways and nothing is
+   clipped. The media query below means that case should not arise. */
+/* These rules used to sit inside the @media (max-width: 768px) block above,
+   so on any desktop width none of them applied: the pager rendered transparent
+   with plain Bootstrap-blue links, and the scrollbar hiding never took effect
+   outside mobile. They are top level from here on. */
+#emailTableWrap {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+#emailTableWrap::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+}
+
+/* Below ~900px the seven columns cannot fit -- the table's minimum content
+   width is 900px, measured -- so a horizontal scrollbar appears and there is
+   no way to remove it that works in every browser (this Chrome ignores
+   scrollbar-width: none, and ::-webkit-scrollbar{display:none} is
+   unreliable headless). Rather than hide a scrollbar, remove its cause:
+   below 900px the desktop table is dropped and the email-card grid takes
+   over, which is the right presentation at that size anyway. Bootstrap's
+   own d-md-* split at 768px is not narrow enough on its own. */
+/* The breakpoint is 992px, not 768px, and that number is not a guess.
+   Bootstrap's .container is only 720px wide between 768px and 992px, so in
+   that whole band the table had roughly 672px to work with against a 900px
+   floor -- and it overflowed, painting a horizontal scrollbar. The previous
+   900px cutoff sat inside that band and so never fired. At 992px and up the
+   container is 960px, which clears the floor.
+
+   Below 992px the desktop table is dropped and the email-card grid takes
+   over, which is the right presentation at that size anyway. */
+@media (max-width: 991.98px) {
+    #emailTableWrap { display: none !important; }
+    .email-card-grid { display: block !important; }
+}
+
+/* Nothing should overflow in the first place. These were the widths forcing
+   it: several columns carried hard px minimums that together exceeded their
+   percentage share of the row. Trimming them took the table's minimum
+   content width from 1345px to 900px, and the padding cut below took it
+   under 850px -- which is what gives the 992px breakpoint real headroom
+   rather than 12px of it.
+
+   The .sender-cell / .date-cell / .score-cell rules that used to sit here
+   were dead code -- those classes were never added to the markup, so they
+   constrained nothing. The sender is bounded by an inline max-width on the
+   span instead. */
+#emailTableWrap .risk-indicator,
+#emailTableWrap .confidence-display { min-width: 64px; }
+#emailTableWrap .confidence-cell .progress { min-width: 32px; }
+#emailTableWrap .cell-align .badge {
+    min-width: 58px;
+    padding: .5rem .4rem;
+}
+/* 1rem of side padding across seven columns was 224px of pure gutter. */
+#emailTableWrap .table td { padding: 1rem .4rem; }
+
+/* ── Pager ──────────────────────────────────────────────────────────────
+   Solid blue rather than a translucent tint: at 18% opacity the strip read as
+   a slightly-off-white box and the count text had almost no contrast
+   against it. The page controls are light buttons sitting on that blue --
+   the same look as the All / Threats / Safe button group in the card
+   header, so the two controls on this page match each other. */
+.pager-bar {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);
+    border: 1px solid #0369a1;
+    border-left: 3px solid #7dd3fc;
+    border-radius: .65rem;
+    box-shadow: 0 2px 10px rgba(2, 132, 199, .35);
+}
+.pager-bar .pager-count {
+    font-weight: 700;
+    font-size: .95rem;
+    color: #fff;
+}
+.pager-bar .pager-count strong { color: #fff; }
+/* Light buttons, matching .btn-light in the card header. */
+.pager-bar .page-link {
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: .375rem;
+    color: #1e293b;
+    font-weight: 700;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+.pager-bar .page-link:hover {
+    background: #e0f2fe;
+    border-color: var(--bs-primary, #0ea5e9);
+    color: #075985;
+}
+.pager-bar .page-item.active .page-link {
+    background: #0b2d4d;
+    border-color: #0b2d4d;
+    color: #fff;
+    box-shadow: 0 0 0 3px rgba(125, 211, 252, .45);
+}
+.pager-bar .page-item.disabled .page-link {
+    background: rgba(255, 255, 255, .45);
+    color: #64748b;
+}
+
 /* Extra small mobile */
 @media (max-width: 359px) {
     .container {
@@ -1088,228 +1072,18 @@ function applySort(url) {
     window.location.href = url;
 }
 
-function filterEmails(type, event) {
-    // Filter desktop table rows
-    const rows = document.querySelectorAll('.email-row');
-    rows.forEach(row => {
-        if (type === 'all') {
-            row.style.display = '';
-        } else {
-            const rowType = row.getAttribute('data-type');
-            row.style.display = rowType === type ? '' : 'none';
-        }
-    });
-    
-    // Filter mobile cards
-    const cards = document.querySelectorAll('.email-card');
-    cards.forEach(card => {
-        if (type === 'all') {
-            card.style.display = '';
-        } else {
-            const cardType = card.getAttribute('data-type');
-            card.style.display = cardType === type ? '' : 'none';
-        }
-    });
-    
-    // Update button states
-    document.querySelectorAll('.btn-group .btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    if (event && event.target) {
-        event.target.classList.add('active');
-    }
-}
+// filterEmails() removed. All / Threats / Safe are real links now, filtered
+// server-side via ?view=, so this client-side display:none loop had no callers
+// left. It could only ever see the rows already in the DOM, which is why it
+// undercounted on anything past page 1.
 
-// Client-side category filtering
-function filterByCategory(category) {
-    // Filter desktop table rows
-    const rows = document.querySelectorAll('.email-row');
-    rows.forEach(row => {
-        if (category === 'all') {
-            row.style.display = '';
-        } else {
-            const rowCategory = row.getAttribute('data-category');
-            row.style.display = rowCategory === category ? '' : 'none';
-        }
-    });
-    
-    // Filter mobile cards
-    const cards = document.querySelectorAll('.email-card');
-    cards.forEach(card => {
-        if (category === 'all') {
-            card.style.display = '';
-        } else {
-            const cardCategory = card.getAttribute('data-category');
-            card.style.display = cardCategory === category ? '' : 'none';
-        }
-    });
-    
-    // Update dropdown to show selected value
-    const dropdownBtn = document.getElementById('categoryFilterBtn');
-    if (dropdownBtn) {
-        const icons = {
-            'all': 'fa-tag',
-            'spam': 'fa-exclamation-triangle',
-            'phishing': 'fa-skull-crossbones',
-            'malware': 'fa-virus',
-            'promotion': 'fa-bullhorn',
-            'newsletter': 'fa-newspaper',
-            'legitimate': 'fa-check-circle'
-        };
-        const colorStyles = {
-            'all': '',
-            'spam': 'color: var(--color-spam);',
-            'phishing': 'color: var(--color-phishing);',
-            'malware': 'color: var(--color-malware);',
-            'promotion': 'color: var(--color-promotion);',
-            'newsletter': 'color: var(--color-newsletter);',
-            'legitimate': 'color: var(--color-legitimate);'
-        };
-        const iconClass = icons[category] || 'fa-tag';
-        const label = {
-            'all': 'All Categories',
-            'spam': 'Spam',
-            'phishing': 'Phishing',
-            'malware': 'Malware',
-            'promotion': 'Promotion',
-            'newsletter': 'Newsletter',
-            'legitimate': 'Not Spam'
-        }[category] || 'All Categories';
-        const iconColor = colorStyles[category] || '';
-        dropdownBtn.innerHTML = '<i class="fas ' + iconClass + ' me-1"' + (iconColor ? ' style="' + iconColor + '"' : '') + '></i> <span id="categoryFilterLabel">' + label + '</span>';
-    }
-}
-
-function selectCategory(category, iconClass, label) {
-    filterByCategory(category);
-    const btn = document.getElementById('categoryFilterBtn');
-    if (btn) {
-        const colorStyles = {
-            'all': '',
-            'spam': 'color: var(--color-spam);',
-            'phishing': 'color: var(--color-phishing);',
-            'malware': 'color: var(--color-malware);',
-            'promotion': 'color: var(--color-promotion);',
-            'newsletter': 'color: var(--color-newsletter);',
-            'legitimate': 'color: var(--color-legitimate);'
-        };
-        const iconColor = colorStyles[category] || '';
-        btn.innerHTML = '<i class="fas ' + iconClass + ' me-1"' + (iconColor ? ' style="' + iconColor + '"' : '') + '></i> <span id="categoryFilterLabel">' + label + '</span>';
-    }
-    // Set active state on dropdown item
-    document.querySelectorAll('.category-filter-dropdown .dropdown-item').forEach(item => {
-        item.classList.remove('active');
-        if (item.getAttribute('onclick') && item.getAttribute('onclick').includes("'" + category + "'")) {
-            item.classList.add('active');
-        }
-    });
-}
-
-// Client-side sorting
-function sortBy(sortType) {
-    const tbody = document.getElementById('emailResults');
-    if (!tbody) return;
-    
-    const rows = Array.from(tbody.querySelectorAll('.email-row'));
-    
-    rows.sort((a, b) => {
-        if (sortType === 'urgency') {
-            // Sort by urgency score (higher first)
-            const urgencyA = parseInt(a.getAttribute('data-urgency') || '0');
-            const urgencyB = parseInt(b.getAttribute('data-urgency') || '0');
-            return urgencyB - urgencyA;
-        } else {
-            // Sort by date (newest first)
-            const dateA = a.getAttribute('data-date') || '';
-            const dateB = b.getAttribute('data-date') || '';
-            return dateB.localeCompare(dateA);
-        }
-    });
-    
-    // Re-append rows in sorted order
-    rows.forEach(row => tbody.appendChild(row));
-    
-    // Also sort mobile cards
-    const cardGrid = document.querySelector('.email-card-grid');
-    if (cardGrid) {
-        const cards = Array.from(cardGrid.querySelectorAll('.email-card'));
-        
-        cards.sort((a, b) => {
-            if (sortType === 'urgency') {
-                const urgencyA = parseInt(a.getAttribute('data-urgency') || '0');
-                const urgencyB = parseInt(b.getAttribute('data-urgency') || '0');
-                return urgencyB - urgencyA;
-            } else {
-                const dateA = a.getAttribute('data-date') || '';
-                const dateB = b.getAttribute('data-date') || '';
-                return dateB.localeCompare(dateA);
-            }
-        });
-        
-        cards.forEach(card => cardGrid.appendChild(card));
-    }
-    
-    // Update sort button
-    const sortBtn = document.getElementById('sortFilterBtn');
-    if (sortBtn) {
-        const sortIcons = { 'date': 'fa-calendar', 'urgency': 'fa-fire' };
-        const sortLabels = { 'date': 'Newest First', 'urgency': 'Urgency (High)' };
-        const iconClass = sortIcons[sortType] || 'fa-calendar';
-        const label = sortLabels[sortType] || 'Newest First';
-        sortBtn.innerHTML = '<i class="fas ' + iconClass + ' me-1"></i> <span id="sortFilterLabel">' + label + '</span>';
-    }
-}
-
-function selectSort(sortType, iconClass, label) {
-    sortBy(sortType);
-    const btn = document.getElementById('sortFilterBtn');
-    if (btn) {
-        btn.innerHTML = '<i class="fas ' + iconClass + ' me-1"></i> <span id="sortFilterLabel">' + label + '</span>';
-    }
-    // Set active state on dropdown item
-    document.querySelectorAll('.sort-filter-dropdown .dropdown-item').forEach(item => {
-        item.classList.remove('active');
-        if (item.getAttribute('onclick') && item.getAttribute('onclick').includes("'" + sortType + "'")) {
-            item.classList.add('active');
-        }
-    });
-}
-
-// Auto-refresh functionality and tooltips
+// Auto-refresh functionality and tooltips.
+// The opener below was deleted by accident when the dead client-side
+// category/sort filter was removed, which orphaned every line after it and
+// threw "Uncaught SyntaxError: Unexpected token '}'" on /results and
+// /last-scan. That killed the dropdown label update, the All/Threats/Safe
+// buttons and the row click handlers at the same time.
 document.addEventListener('DOMContentLoaded', function() {
-    // Initialize category dropdown with current selection
-    {% if current_category and current_category != 'all' %}
-    const initCat = '{{ current_category }}';
-    const initIconMap = {
-        'spam': 'fa-exclamation-triangle',
-        'phishing': 'fa-skull-crossbones',
-        'malware': 'fa-virus',
-        'promotion': 'fa-bullhorn',
-        'newsletter': 'fa-newspaper',
-        'legitimate': 'fa-check-circle'
-    };
-    const initLabelMap = {
-        'spam': 'Spam',
-        'phishing': 'Phishing',
-        'malware': 'Malware',
-        'promotion': 'Promotion',
-        'newsletter': 'Newsletter',
-        'legitimate': 'Not Spam'
-    };
-    if (initIconMap[initCat]) {
-        selectCategory(initCat, initIconMap[initCat], initLabelMap[initCat]);
-    }
-    {% else %}
-    selectCategory('all', 'fa-tag', 'All Categories');
-    {% endif %}
-    
-    // Initialize sort dropdown with current selection
-    {% if current_sort == 'urgency' %}
-    selectSort('urgency', 'fa-fire', 'Urgency (High)');
-    {% else %}
-    selectSort('date', 'fa-calendar', 'Newest First');
-    {% endif %}
-    
     // Add tooltips to truncated text
     const tooltipElements = document.querySelectorAll('[title]');
     tooltipElements.forEach(element => {
@@ -1333,6 +1107,330 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }, 100);
 });
+
+/* ── Filter and pagination without a reload ─────────────────────────────────
+   Every filter and page link is a real href. A click on one of them is now
+   intercepted, the matching fragment is fetched, and only the parts that depend
+   on the filter are replaced: the row list, the pager and the count line. The
+   header, summary tiles and category breakdown are left alone, because those
+   describe the whole scan and do not change with a filter.
+
+   The links are deliberately left working as hrefs. If fetch() fails, is
+   blocked, or this script never runs, the browser follows the link and
+   renders a normal full page. There is no JS-only path to the data.
+
+   Only clicks on [data-ajax-nav] are intercepted, so the email subject links,
+   the Sort Again button and everything else keep their normal behaviour. */
+(function () {
+    var FRAGMENT_URL = {{ url_for('results_fragment') | tojson }};
+    var ENDPOINT = {{ ('last_scan_page' if is_last_scan else 'results_page') | tojson }};
+    var inflight = null;
+
+    // Rows arrive as fresh HTML, so their listeners are gone. bindRowHandlers()
+    // lives in a later script block and is idempotent, so calling it again is
+    // safe; guard anyway so a load-order change degrades to inert rows rather
+    // than a thrown error that kills the whole filter handler.
+    function rebindRowHandlers(tbody) {
+        if (typeof window.bindRowHandlers === 'function') {
+            window.bindRowHandlers();
+        }
+    }
+
+    function currentParams(url) {
+        var p = new URLSearchParams(url.search);
+        return {
+            endpoint: ENDPOINT,
+            category: p.get('category') || 'all',
+            sort: p.get('sort') || 'date',
+            view: p.get('view') || 'all',
+            // scope was missing here, so every JS-built link (the pager) dropped
+            // it and paging silently widened the date window back to the
+            // default. A filter only survives if its param reaches the next URL.
+            scope: p.get('scope') || 'current',
+            page: p.get('page') || '1'
+        };
+    }
+
+    function pagerHtml(meta, params) {
+        if (!meta || meta.total_pages <= 1) {
+            return '<ul class="pagination pagination-sm mb-0"></ul>';
+        }
+        function href(p) {
+            return '?' + new URLSearchParams({
+                category: params.category, sort: params.sort, view: params.view,
+                scope: params.scope, page: p
+            }).toString();
+        }
+        var out = '<ul class="pagination pagination-sm mb-0">';
+        if (meta.has_prev) {
+            out += '<li class="page-item"><a class="page-link" data-ajax-nav href="' + href(meta.page - 1) + '">&larr; Previous</a></li>';
+        }
+        for (var p = 1; p <= meta.total_pages; p++) {
+            if (p === meta.page) {
+                out += '<li class="page-item active"><span class="page-link">' + p + '</span></li>';
+            } else if (p === 1 || p === meta.total_pages ||
+                       (p >= meta.page - 2 && p <= meta.page + 2)) {
+                out += '<li class="page-item"><a class="page-link" data-ajax-nav href="' + href(p) + '">' + p + '</a></li>';
+            } else if (p === meta.page - 3 || p === meta.page + 3) {
+                out += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+            }
+        }
+        if (meta.has_next) {
+            out += '<li class="page-item"><a class="page-link" data-ajax-nav href="' + href(meta.page + 1) + '">Next &rarr;</a></li>';
+        }
+        return out + '</ul>';
+    }
+
+    function updateCountLine(meta, params, catMeta) {
+        var el = document.querySelector('.pager-count');
+        if (!el || !meta) return;
+        if (!meta.total) {
+            // Names the class, so an empty list reads as an answer rather than a
+            // fault. "Nothing to show" gave the user nothing to act on.
+            el.textContent = emptyLabel(params, catMeta);
+            return;
+        }
+        var from = ((meta.page - 1) * meta.page_size) + 1;
+        var to = Math.min(meta.page * meta.page_size, meta.total);
+        var bits = ['Showing ', from, '–', to, ' of ', meta.total,
+                    ' ', meta.total === 1 ? 'email' : 'emails'];
+        if (meta.total_pages > 1) {
+            bits.push(' · page ' + meta.page + ' of ' + meta.total_pages);
+        }
+        if (params.category && params.category !== 'all') {
+            bits.push(' · filtered to ');
+            bits.push(params.category);
+        }
+        el.textContent = bits.join('');
+    }
+
+    function updateLabels(params, catMeta) {
+        var meta = catMeta[params.category] || catMeta.all;
+        var btn = document.getElementById('categoryFilterBtn');
+        if (btn) {
+            btn.innerHTML = '<i class="fas ' + meta[0] + ' me-1"' +
+                (meta[2] ? ' style="color: ' + meta[2] + ';"' : '') + '></i> ' +
+                '<span id="categoryFilterLabel">' + meta[1] + '</span>';
+        }
+        var sortBtn = document.getElementById('sortFilterBtn');
+        if (sortBtn) {
+            var isUrg = params.sort === 'urgency';
+            sortBtn.innerHTML = '<i class="fas ' + (isUrg ? 'fa-fire' : 'fa-calendar') +
+                ' me-1"></i> <span id="sortFilterLabel">' +
+                (isUrg ? 'Urgency (High)' : 'Newest First') + '</span>';
+        }
+        document.querySelectorAll('.filter-buttons a').forEach(function (a) {
+            var v = new URL(a.href).searchParams.get('view') || 'all';
+            a.classList.toggle('active', v === params.view);
+        });
+        document.querySelectorAll('.category-filter-dropdown .dropdown-item').forEach(function (a) {
+            var c = new URL(a.href).searchParams.get('category') || 'all';
+            a.classList.toggle('active', c === params.category);
+        });
+        var badge = document.getElementById('currentFilterBadge');
+        if (badge) {
+            badge.textContent = params.category && params.category !== 'all'
+                ? meta[1] : '';
+        }
+    }
+
+    function load(href, opts) {
+        opts = opts || {};
+        var url = new URL(href, window.location.origin);
+        var params = currentParams(url);
+        if (inflight) inflight.abort();
+        var ctl = new AbortController();
+        inflight = ctl;
+        var qs = new URLSearchParams(params).toString();
+
+        fetch(FRAGMENT_URL + '?' + qs, {
+            signal: ctl.signal,
+            headers: {'X-Requested-With': 'fetch'}
+        }).then(function (r) {
+            if (!r.ok) {
+                var err = new Error('status ' + r.status);
+                err.status = r.status;
+                throw err;
+            }
+            return r.json();
+        }).then(function (data) {
+            if (data.error) {
+                var err = new Error(data.error);
+                err.appError = data.error;
+                throw err;
+            }
+            var tbody = document.getElementById('emailResults');
+            if (tbody) {
+                // Server-rendered by the same Jinja macro the full page uses.
+                // Do not rebuild rows here: an earlier client-side builder
+                // drifted from the server markup and printed raw category
+                // slugs and unrounded percentages.
+                //
+                // A zero-match filter returns rows_html === '' with total 0.
+                // That is a valid answer, so the empty row is rendered here the
+                // same way the server renders it, rather than navigating away.
+                // rows_html is a STRING. It arrived here with a .join('') call
+                // that had never worked: render_template returns text, not an
+                // array. It only stayed hidden because the empty-filter path
+                // short-circuits on the falsy '' and never reached the call --
+                // so every NON-empty filter threw and showed "Could not load
+                // results". Do not add .join() back.
+                tbody.innerHTML = data.rows_html
+                    ? data.rows_html
+                    : emptyHtml(params, data.cat_meta, 'tr');
+                rebindRowHandlers(tbody);
+            }
+            // The mobile card grid shows the same data and must be swapped too.
+            // It was left untouched at first, so on a phone the cards kept the
+            // unfiltered list while the pager beside them said "filtered to
+            // phishing" -- the two halves of the page disagreed.
+            var grid = document.querySelector('.email-card-grid');
+            if (grid) {
+                grid.innerHTML = data.cards_html
+                    ? data.cards_html
+                    : emptyHtml(params, data.cat_meta, 'div');
+                rebindRowHandlers(grid);
+            }
+            var nav = document.querySelector('.pager-bar nav');
+            if (nav) nav.innerHTML = pagerHtml(data.meta, params);
+            updateCountLine(data.meta, params, data.cat_meta);
+            updateLabels(params, data.cat_meta);
+            rewireFilterLinks(params);
+
+            // ── History rule ──────────────────────────────────────────────
+            // Filters (category, sort, All/Threats/Safe) REPLACE the current
+            // entry. Paging PUSHES a new one.
+            //
+            // Filters are a refinement of the view you are already looking at,
+            // so stepping back through them is noise: with pushState, selecting
+            // spam then newsletter then newsletter again meant five Back presses
+            // to reach the dashboard, and Chrome started showing its hover
+            // link-preview card with the back/forward arrows on every hover.
+            //
+            // Paging is different. You genuinely move through the result set, so
+            // each page is a real step worth being able to walk back.
+            //
+            // replaceState still updates the address bar, so the URL stays
+            // shareable and F5 keeps the filter -- it just does not add an
+            // entry to step back through.
+            if (opts.fromPopstate) {
+                // Reached by Back/Forward: the entry already exists, so neither
+                // push nor replace. The URL is already correct.
+            } else if (params.page && params.page !== '1') {
+                history.pushState({ajax: true}, '', url.pathname + url.search);
+            } else {
+                history.replaceState({ajax: true}, '', url.pathname + url.search);
+            }
+        }).catch(function (err) {
+            if (err && err.name === 'AbortError') return;
+
+            // Only a genuine failure falls back to a real navigation. The three
+            // cases the endpoint uses to signal state -- no_scan, auth expiry,
+            // server error -- all mean the page cannot be patched in place, so
+            // navigating is correct. Anything else is shown in place instead of
+            // silently reloading the page out from under the user.
+            if (err && err.status) {
+                window.location.href = href;      // 401 / 409 / 500
+                return;
+            }
+            if (err && err.appError) {
+                window.location.href = href;      // no_scan
+                return;
+            }
+            // Network / parse failure. Say so in the pager bar rather than
+            // reloading, so the user keeps their place and sees the reason.
+            showPagerError('Could not load results. Check your connection and retry.');
+            if (window.console && console.warn) {
+                console.warn('results filter failed:', err);
+            }
+        });
+    }
+
+    // The filter links carry their own query string from the server render, and
+    // that render happened BEFORE any AJAX change. Left alone, selecting
+    // Phishing then clicking Safe navigated to
+    // ?category=all&view=safe -- silently throwing the category filter away,
+    // so Safe showed all 97 legitimate emails instead of the 0 phishing ones.
+    // Found by clicking the buttons in that order in the browser.
+    //
+    // Each link owns exactly one param (its category, or sort, or view); every
+    // other param has to be re-pointed at the live state. Page always resets to
+    // 1, because a filter change lands you on the first page of a new result set.
+    function rewireFilterLinks(params) {
+        document.querySelectorAll('a[data-filter-link]').forEach(function (a) {
+            var own = a.getAttribute('data-keep');       // category | sort | view
+            var u = new URL(a.getAttribute('href'), window.location.origin);
+            var next = new URLSearchParams();
+            // The link keeps the ONE param it chooses; every other param comes
+            // from the live filter state.
+            //
+            // Ownership has to be declared. An earlier version inferred it from
+            // "which params does this href already contain", but the server
+            // renders ALL FOUR into every link, so the test was always true and
+            // each link kept its stale first-paint values -- which is the very
+            // bug this function exists to fix.
+            ['category', 'sort', 'scope', 'view'].forEach(function (k) {
+                next.set(k, k === own
+                    ? (u.searchParams.get(k) || '')
+                    : (params[k] || ''));
+            });
+            next.set('page', '1');   // a filter change lands on page 1
+            u.search = next.toString();
+            a.setAttribute('href', u.pathname + u.search);
+        });
+    }
+
+    // "No phishing emails in this scan". Built from the cat_meta the endpoint
+    // already sends, so there is no second copy of the category names.
+    function emptyLabel(params, catMeta) {
+        var noun = '';
+        if (params.category && params.category !== 'all' && catMeta[params.category]) {
+            noun = catMeta[params.category][1].toLowerCase();
+        } else if (params.view === 'threat') {
+            noun = 'threat';
+        } else if (params.view === 'safe') {
+            noun = 'safe';
+        }
+        return 'No ' + noun + ' emails in this scan';
+    }
+
+    // The empty state. `tag` is 'tr' for the table body and 'div' for the card
+    // grid; they differ only in the wrapper.
+    function emptyHtml(params, catMeta, tag) {
+        var body = '<i class="fas fa-inbox fa-3x text-muted mb-3"></i>' +
+            '<p class="mb-1 fw-bold">' + emptyLabel(params, catMeta) + '</p>' +
+            '<small class="text-muted">The rest of this scan is unchanged above.</small>';
+        return tag === 'tr'
+            ? '<tr id="emailResultsEmpty"><td colspan="7" class="text-center py-5">' +
+              body + '</td></tr>'
+            : '<div class="empty-filter-state text-center py-5">' + body + '</div>';
+    }
+
+    function showPagerError(msg) {
+        var el = document.querySelector('.pager-count');
+        if (!el) return;
+        el.innerHTML = '<span class="text-danger">' + msg + '</span>';
+    }
+
+    document.addEventListener('click', function (e) {
+        var a = e.target.closest ? e.target.closest('a[data-ajax-nav]') : null;
+        if (!a) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        // Close an open Bootstrap dropdown so it does not linger over the rows.
+        document.querySelectorAll('.dropdown-menu.show').forEach(function (m) {
+            m.classList.remove('show');
+        });
+        load(a.getAttribute('href'));
+    });
+
+    // Back/forward must work too, or the URL and the table would disagree.
+    // fromPopstate tells load() that the history entry already exists, so it
+    // neither pushes nor replaces -- that is the browser's job on a pop.
+    window.addEventListener('popstate', function () {
+        load(window.location.href, {fromPopstate: true});
+    });
+})();
 </script>
 
 <!-- Email View Modal -->
@@ -2478,10 +2576,18 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Add click handlers to email rows and cards
-document.addEventListener('DOMContentLoaded', function() {
+// Add click handlers to email rows and cards.
+//
+// bindRowHandlers() is a named function, not an inline DOMContentLoaded body,
+// because the AJAX filter swap replaces the entire <tbody> with server-rendered
+// rows. Handlers attached once at load do not survive innerHTML being replaced,
+// so every swap has to call this again or the new rows are inert. Each query
+// skips anything already marked data-bound, making repeat calls safe.
+function bindRowHandlers() {
     // Desktop table rows
     document.querySelectorAll('.email-row').forEach(row => {
+        if (row.dataset.bound === '1') return;   // idempotent
+        row.dataset.bound = '1';
         row.style.cursor = 'pointer';
         row.addEventListener('click', function(e) {
             // Don't trigger if clicking on a link or button
@@ -2502,7 +2608,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Mobile cards - intercept clicks to open modal instead of navigating
-    document.querySelectorAll('.email-card-grid a').forEach(link => {
+    document.querySelectorAll('.email-card-grid a:not([data-bound])').forEach(link => {
+        link.dataset.bound = '1';
         link.addEventListener('click', function(e) {
             // Always prevent default navigation
             e.preventDefault();
@@ -2517,7 +2624,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Subject links - intercept clicks to open modal instead of navigating
-    document.querySelectorAll('.email-subject-link').forEach(link => {
+    document.querySelectorAll('.email-subject-link:not([data-bound])').forEach(link => {
+        link.dataset.bound = '1';
         link.addEventListener('click', function(e) {
             // Always prevent default navigation
             e.preventDefault();
@@ -2529,7 +2637,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-});
+}
+
+document.addEventListener('DOMContentLoaded', bindRowHandlers);
 </script>
 
 <!-- REMOVED DUPLICATE SCRIPT - This was causing page refresh -->

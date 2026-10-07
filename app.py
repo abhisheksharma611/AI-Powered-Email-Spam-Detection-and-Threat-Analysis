@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import warnings
 import secrets
@@ -17,10 +18,10 @@ from flask_migrate import Migrate
 
 from config import config
 from utils.auth import init_oauth
-from utils.gmail_client import GmailClient
+from utils.gmail_client import GmailClient, prepare_for_model, GmailFetchError
 from utils.ai_explanation import generate_ai_explanation
 from models.predictor import Predictor
-from models.email_model import db, Email, SenderReputation, OAuthStore
+from models.email_model import db, Email, SenderReputation, OAuthStore, ScanSession
 from utils.helpers import (
     calculate_urgency, learn_keywords_from_email, apply_adaptive_keyword_boost,
     build_risk_breakdown, generate_explanation_summary, get_matched_learned_keywords,
@@ -32,12 +33,67 @@ warnings.filterwarnings('ignore', category=FutureWarning, module='torch.utils._p
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 MAX_INPUT_LENGTH = 5000
+# ── Test Text box: how much text is needed before the model is asked to judge ──
+#
+# Measured on this corpus: the shortest training row is 34 words and NOTHING in
+# the 9280 rows is under 25 words, so below that the model has never seen the
+# shape of the input. Measured behaviour in that gap:
+#     'hi'          -> newsletter 40%
+#     'ok'          -> MALWARE 77%   (risk 65, on a two-letter word)
+#     '$%^&*()'     -> MALWARE 93%   (risk 78, on symbols)
+#     '!!!!!!!!!!'  -> spam 43%      (a red "General spam content" triangle)
+#
+# A wrong confident verdict is worse than an honest refusal, so /api/analyze_text
+# counts alphabetic characters and refuses to classify when there is not enough
+# to read. Letters only: spaces, digits, punctuation and emoji do not count.
+#
+# Verified against the live inbox: 0 of 50 real emails fall at or below 10
+# letters, so this cannot affect the Start Analysis path even in principle. It
+# is deliberately NOT applied to /api/start_analysis or /bulk_analyze.
+MIN_LETTERS_TO_JUDGE = 10
+# Below this, the verdict is still returned but the user is told how little text
+# the model actually had to work with. 40 letters sits above the corpus minimum
+# of 34 words while staying far below a real body, so it only ever fires on the
+# genuinely short pastes.
+SHORT_INPUT_LETTERS = 40
+# ── Inbox thin-input guards (Start Analysis path) ─────────────────────────────
+#
+# 34 words is the shortest row in all 9280 training rows. Below it the model has
+# no training coverage at all, so its class and its confidence are both
+# extrapolations. Measured on the live inbox, the shortest real mail was 32
+# words (a Tata 1mg promo) and the next was 49, so this fires only on genuinely
+# thin input and not on normal mail.
+#
+# Used for two things, both of which are about not letting a weak read escalate:
+#   1. no thin message may contribute a hit to sender reputation
+#   2. no thin message may be escalated past Medium risk
+THIN_INPUT_WORDS = 34
+# Ceiling for a thin read. 60 is the top of the dashboard's Medium band, so a
+# message the model barely read can still be flagged for a look but can never
+# raise an alarm. Measured: "Hello How are you?" scored risk 72 / High on four
+# words.
+THIN_INPUT_MAX_RISK = 60
 MAX_BATCH_SIZE = 100
+# Results paging. Always 50 per page.
+#
+# There was an adaptive rule here -- 50 up to 200 emails, 100 beyond -- which
+# was wrong twice over. It made the page size depend on the FILTERED count, so
+# picking a category silently changed how many rows you saw per page, and it
+# contradicted the 50-per-page promise. A fixed 50 also means a filtered class
+# of 4 renders as one page of 4, which is what the count in the Category
+# Distribution strip is promising.
 RESULTS_PER_PAGE = 50
 DEFAULT_RATE_LIMIT_REQUESTS = 10
 DEFAULT_RATE_LIMIT_WINDOW = 60
 IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
 CATEGORIES_ALL = ['legitimate', 'promotion', 'phishing', 'malware', 'newsletter', 'spam']
+# The All / Threats / Safe group. `threat` deliberately excludes promotion and
+# newsletter: those are commercial, not malicious, and is_spam treats them as
+# threats (a ~76% false rate). Promotion and Newsletter have their own filter
+# entries in the category dropdown. Kept as a tuple so the query below can use
+# it directly in an IN clause.
+THREAT_CATEGORIES = ('phishing', 'malware', 'spam')
+VIEW_FILTERS = ('all', 'threat', 'safe')
 CHART_LABELS = ['Not Spam', 'Spam', 'Promotion', 'Phishing', 'Malware', 'Newsletter']
 CHART_LABELS_ALT = ['Spam', 'Not Spam', 'Promotion', 'Phishing', 'Malware', 'Newsletter']
 
@@ -89,6 +145,22 @@ def utc_to_ist(dt):
 
 def ist_now():
     return datetime.now(IST_OFFSET)
+
+
+def seven_days_ago_local():
+    """The 7-day cutoff in the SAME frame as Email.date.
+
+    Email.date is stored as naive local wall-clock time (IST, +5:30), because
+    that is what Gmail sends. Comparing it against datetime.utcnow() skews the
+    window by 5.5 hours, which silently drops emails from the newest 5.5 hours
+    of every "last 7 days" window and lets slightly older ones in. Measured on
+    the live data: the utcnow() cutoff returned 24 rows and the local cutoff
+    22, and an email dated 00:00 on the boundary day was excluded outright.
+
+    Returns a NAIVE datetime, because Email.date is naive. Do not use
+    datetime.utcnow() for anything compared against it.
+    """
+    return datetime.now(IST_OFFSET).replace(tzinfo=None) - timedelta(days=7)
 
 
 def format_ist(dt, fmt='%Y-%m-%d %I:%M %p IST'):
@@ -287,10 +359,60 @@ def rate_limit(max_req=10, window=60, cooldown=False):
     return decorator
 
 
+# ── Trusted senders ──────────────────────────────────────────────────────────
+
+# Senders that deliver real infrastructure mail: cloud storage shares, account
+# security notices, transactional mail, developer platforms. They are still
+# classified by the model, but they are exempt from the reputation penalty,
+# because a single bad prediction about Google Drive was enough to blacklist the
+# entire sender permanently.
+TRUSTED_SENDER_DOMAINS = frozenset({
+    'google.com', 'googlemail.com', 'gmail.com', 'googleusercontent.com',
+    'microsoft.com', 'microsoftonline.com', 'outlook.com', 'office365.com',
+    'live.com', 'hotmail.com', 'sharepoint.com', 'microsoftonline.net',
+    'apple.com', 'icloud.com', 'me.com', 'itunes.com',
+    'amazon.com', 'amazonaws.com', 'amazon.in',
+    'adobe.com', 'atlassian.net', 'slack.com', 'zoom.us', 'dropbox.com',
+    'github.com', 'gitlab.com', 'okta.com', 'auth0.com', 'twilio.com',
+    'salesforce.com', 'hubspot.com', 'zendesk.com', 'servicenow.com',
+    'notion.so', 'asana.com', 'trello.com', 'intercom.io', 'mailchimp.com',
+    'sendgrid.net', 'postmarkapp.com', 'stripe.com',
+})
+
+
+def is_trusted_sender(sender_email):
+    """True if the sender's domain is known infrastructure mail.
+
+    This suppresses only the *reputation* penalty. It does not override the model
+    and it does not suppress the keyword boost, so a genuine phishing message that
+    spoofs one of these domains is still scored on its content.
+    """
+    if not sender_email or '@' not in sender_email:
+        return False
+    domain = sender_email.rsplit('@', 1)[-1].strip().lower()
+    return any(domain == d or domain.endswith('.' + d)
+               for d in TRUSTED_SENDER_DOMAINS)
+
+
 # ── Sender Reputation ─────────────────────────────────────────────────────────
 
-def update_sender_reputation(sender_email, category, urgency_score, db_session=None):
+def update_sender_reputation(sender_email, category, urgency_score, db_session=None,
+                             model_word_count=None):
+    """Fold one message into a sender's reputation.
+
+    `model_word_count` is the length of the string the classifier actually read.
+    When it is below THIN_INPUT_WORDS the message is still counted in
+    total_emails -- it really did arrive -- but it never contributes a
+    phishing/malware/spam hit, because the model had less text than any row in
+    its training set and the class it returned is not evidence.
+
+    Measured case this exists for: two personal messages reading "Hi" and
+    "Hello How are you?" were classified phishing at 36% and 91% confidence, and
+    drove that sender to 2 hits out of 2 messages, reputation_score 100.0. Two
+    four-word messages are not a hostile-sender signal.
+    """
     session = db_session or db.session
+    thin = (model_word_count is not None and model_word_count < THIN_INPUT_WORDS)
     rep = session.query(SenderReputation).filter_by(sender_email=sender_email).first()
     if not rep:
         rep = SenderReputation(
@@ -302,20 +424,28 @@ def update_sender_reputation(sender_email, category, urgency_score, db_session=N
 
     if rep.last_seen and rep.total_emails > 0:
         months = (datetime.utcnow() - rep.last_seen).days / 30.0
-        decay = max(0.5, 1.0 - 0.05 * months)
-        rep.phishing_count = max(0, int(rep.phishing_count * decay))
-        rep.malware_count = max(0, int(rep.malware_count * decay))
-        rep.spam_count = max(0, int(rep.spam_count * decay))
-        rep.high_urgency_count = max(0, int(rep.high_urgency_count * decay))
+        # BUG E FIX (part 2): only decay after a real gap. A monthly sender used to be
+        # multiplied by 0.95 every message, and int(1 * 0.95) == 0 destroyed every count
+        # within ~3 months while total_emails kept growing, so the denominator inflated
+        # and the ratio decayed to 0. round() instead of int() also stops 0.4 -> 0.
+        if months >= 3:
+            decay = max(0.5, 1.0 - 0.05 * months)
+            rep.phishing_count = max(0, round(rep.phishing_count * decay))
+            rep.malware_count = max(0, round(rep.malware_count * decay))
+            rep.spam_count = max(0, round(rep.spam_count * decay))
+            rep.high_urgency_count = max(0, round(rep.high_urgency_count * decay))
 
     rep.total_emails += 1
-    if category == 'phishing':
+    if thin:
+        # Counted above as delivered, not counted below as hostile.
+        pass
+    elif category == 'phishing':
         rep.phishing_count += 1
     elif category == 'malware':
         rep.malware_count += 1
     elif category == 'spam':
         rep.spam_count += 1
-    if urgency_score >= 70:
+    if urgency_score >= 70 and not thin:
         rep.high_urgency_count += 1
     rep.last_seen = datetime.utcnow()
 
@@ -323,7 +453,17 @@ def update_sender_reputation(sender_email, category, urgency_score, db_session=N
     max_possible = rep.total_emails * 4
     rep.reputation_score = min((raw / max_possible) * 100, 100.0) if max_possible > 0 else 0
 
-    if rep.total_emails >= 3:
+    # BUG E FIX (part 1): the old gate was `total_emails >= 3`, so ONE misclassified
+    # email in three gave raw=4, max=12, score=33 -> 'Medium' -> a permanent +10 risk
+    # on every future email from that sender. That is how real senders such as
+    # care@emaila.1mg.com and info@connect.netmeds.com got flagged.
+    # Require BOTH a minimum sample and a minimum absolute hit count, so a single
+    # misfire can never cross a threshold and a small sample can never look bad.
+    MIN_SAMPLES = 10
+    MIN_ABS_HITS = 2
+    abs_hits = rep.phishing_count + rep.malware_count + rep.spam_count
+
+    if rep.total_emails >= MIN_SAMPLES and abs_hits >= MIN_ABS_HITS:
         if rep.reputation_score < 20:
             rep.risk_level = 'Low'
         elif rep.reputation_score < 50:
@@ -336,27 +476,104 @@ def update_sender_reputation(sender_email, category, urgency_score, db_session=N
     return rep.reputation_score, rep.risk_level
 
 
+def prune_deleted_emails(gmail_client, user_email, session=None):
+    """Drop stored rows for mail the user has since deleted.
+
+    THE OBVIOUS VERSION IS WRONG, and the reason matters. The obvious
+    implementation deletes every stored row whose id is not in the current
+    fetch. Both scan paths call get_recent_emails(max_results=50), so "absent
+    from the fetch" overwhelmingly means "older than the newest 50", not
+    "deleted" -- that version would silently destroy the user's entire
+    history on the first scan that ran.
+
+    So instead of inferring deletion from absence, ask Gmail directly which of
+    the ids we actually hold are in Trash, and delete only those. An id that
+    Gmail confirms is in Trash is proof; an id we did not fetch is not.
+
+    Returns the number of rows removed. Never raises: a failure here must not
+    take down a scan that otherwise succeeded.
+    """
+    sess = session or db.session
+    try:
+        trashed = gmail_client.get_trashed_ids()
+        # None means the question could not be answered (auth error, network).
+        # Pruning on that would be acting on ignorance -- skip entirely.
+        if trashed is None:
+            logger.warning("Skipping prune: could not list trashed ids from Gmail")
+            return 0
+
+        stored_ids = {row[0] for row in sess.query(Email.id)
+                      .filter_by(user_email=user_email).all()}
+        if not stored_ids:
+            return 0
+
+        # Intersect with what we store, so a large Trash cannot widen the delete.
+        doomed = stored_ids & trashed
+        if not doomed:
+            return 0
+
+        removed = 0
+        for row in sess.query(Email).filter(
+                Email.user_email == user_email,
+                Email.id.in_(doomed)).all():
+            sess.delete(row)
+            removed += 1
+        sess.commit()
+        logger.info("Pruned %d deleted email(s) no longer in the mailbox for %s",
+                    removed, user_email)
+        return removed
+    except Exception as e:
+        sess.rollback()
+        logger.warning("Prune of deleted emails failed, keeping stored rows: %s", e)
+        return 0
+
+
 # ── Analysis Service (shared by sync + async) ─────────────────────────────────
 
 def _prepare_email_data(emails):
+    """Build the model input and the per-email metadata.
+
+    The string handed to the classifier goes through prepare_for_model(), which is
+    the same function models/roberta_train.py and models/evaluate.py apply to
+    every training row. One definition, so there is no train/serve gap to reason
+    about.
+
+    200 words, not the previous 130. The corpus maximum is 137 words and the
+    training cap is 150, so 130 was sitting BELOW the training distribution and
+    was truncating real body text that the model had been trained to read in
+    full. A real Gmail body is 300-600 words; uncapped, it truncates down to its
+    unsubscribe footer and classifies worse than the snippet did. 200 is past
+    where any body text stops being the message.
+
+    metadata['body'] keeps the FULL uncapped text so the stored record and the UI
+    still see everything.
+    """
     texts, metadata = [], []
     for i, em in enumerate(emails):
-        body = em.get('body', '') or em.get('snippet', '')
-        texts.append(f"{em.get('subject', '')} {body}")
+        full_body = em.get('body', '') or em.get('snippet', '')
+        subject = em.get('subject', '') or ''
+        model_text = prepare_for_model(f"{subject} {full_body}".strip())
+        texts.append(model_text)
         metadata.append({
             'index': i,
             'id': em.get('id', f'email_{i}'),
-            'subject': em.get('subject', 'No Subject'),
+            'subject': subject or 'No Subject',
             'sender': em.get('sender', 'Unknown'),
             'date': em.get('date', ''),
             'date_obj': parse_email_date(em.get('date', '')),
             'snippet': em.get('snippet', ''),
-            'body': body,
+            'body': full_body,
+            'label_ids': em.get('label_ids') or [],
+            # The exact string the classifier saw, kept so the thin-input
+            # guards below measure the model's input rather than re-deriving a
+            # different one from the full body. `body` is uncapped; this is not.
+            'model_text': model_text,
         })
     return texts, metadata
 
 
-def _process_single_email(metadata, prediction, user_email, db_session=None):
+def _process_single_email(metadata, prediction, user_email, db_session=None,
+                          scan_id=None):
     sess = db_session or db.session
     cat = prediction['category']
     risk_score = prediction['risk_score']
@@ -364,6 +581,16 @@ def _process_single_email(metadata, prediction, user_email, db_session=None):
     risk_level = prediction['risk_level']
     confidence = prediction['confidence']
     category_info = predictor.get_category_info(cat)
+
+    # How much text the classifier actually read. Used by both thin-input
+    # guards below. Falls back to the full body if a caller did not supply
+    # model_text, so the guards can never silently switch off.
+    model_text = metadata.get('model_text')
+    if model_text is None:
+        model_text = prepare_for_model(
+            f"{metadata.get('subject', '')} {metadata.get('body', metadata.get('snippet', ''))}".strip())
+    model_word_count = len(model_text.split())
+    thin_input = model_word_count < THIN_INPUT_WORDS
 
     urgency = calculate_urgency(metadata['subject'], metadata.get('body', metadata['snippet']), metadata['sender'])
 
@@ -377,8 +604,19 @@ def _process_single_email(metadata, prediction, user_email, db_session=None):
             record.ai_explanation_generated_at = None
         record.subject = str(metadata['subject'])[:500]
         record.sender = str(metadata['sender'])[:255]
+        # The body was never written. Every stored row had an empty `body` column
+        # even when the fetch produced one, which made it impossible to audit why
+        # a message had been classified a certain way. Full text, not the capped
+        # model input, so the UI and any review can still read the whole message.
+        record.body = str(metadata.get('body') or '')[:20000]
         record.snippet = str(metadata['snippet'])[:1000]
         record.date = metadata.get('date_obj')
+        # Persist the labels so a stored row records which mailbox it came from.
+        _labels = metadata.get('label_ids') or []
+        record.label_ids = ','.join(str(x) for x in _labels[:20])[:255] if _labels else None
+        # Stamped every scan, so a re-scan of the same message moves it into the
+        # new scope rather than leaving it visible in both.
+        record.scan_id = scan_id
         record.category = cat
         record.is_spam = is_spam
         record.risk_score = risk_score
@@ -396,13 +634,22 @@ def _process_single_email(metadata, prediction, user_email, db_session=None):
 
         sender_risk = 'Low'
         if metadata['sender']:
-            _, sender_risk = update_sender_reputation(metadata['sender'], cat, urgency['urgency_score'], sess)
-            if sender_risk == 'Medium':
-                record.risk_score = min(record.risk_score + 10, 100)
-            elif sender_risk == 'High':
-                record.risk_score = min(record.risk_score + 20, 100)
-            record.risk_level = risk_level_for_score(record.risk_score)
+            _, sender_risk = update_sender_reputation(
+                metadata['sender'], cat, urgency['urgency_score'], sess,
+                model_word_count=model_word_count)
+            # TRUSTED_SENDER: a confirmed legitimate infrastructure sender never gets
+            # a reputation penalty. drive-shares-dm-noreply@google.com reached
+            # reputation 100.0 / High, which added +20 to every subsequent Drive
+            # share even though the model itself was only ~74% confident.
+            if is_trusted_sender(metadata['sender']):
+                sender_risk = 'Low'
+        record.risk_level = risk_level_for_score(record.risk_score)
 
+        # BOOST STACK CAP. The two boosts below used to be applied independently and
+        # then summed, so a model that was only 63% certain could be pushed to 100:
+        #     "Share request for DS.pdf" -> base 63, keyword +20, sender +20, urgency +20
+        # The boosts are now combined into a single penalty with its own ceiling, and
+        # the total is clamped so the result stays meaningful.
         matched_kw = get_matched_learned_keywords(metadata['subject'], metadata.get('body', metadata['snippet']), sess)
         flags = []
         base_score = risk_score
@@ -421,18 +668,82 @@ def _process_single_email(metadata, prediction, user_email, db_session=None):
         if matched_kw:
             flags.append('learned_keyword_match')
 
+        # Combined ceiling: at most 20 points of hand-written heuristics, whatever
+        # the individual sources claim. Previously 30-60 points were possible.
+        COMBINED_BOOST_CAP = 20
+        combined = min(kw_boost + snd_boost + urg_boost, COMBINED_BOOST_CAP)
+        record.risk_score = min(base_score + combined, 100)
+
+        # THIN INPUT CLAMP. Applied last, after the boosts, so nothing can push
+        # a weak read past Medium.
+        #
+        # The model's own base_risk for phishing is 80 and for malware 85, so a
+        # confident read scales straight into the High band. On four words of
+        # text that number is an extrapolation, not a measurement. Measured:
+        # "Hello How are you?" -> phishing 0.91 -> risk 72 / High, and the
+        # sender was then recorded as a confirmed phisher.
+        #
+        # This does NOT refuse to classify and does NOT hide the email. The
+        # category is still stored for the audit trail, the risk is still shown,
+        # it just cannot raise an alarm on text the model has never seen the
+        # length of.
+        thin_input_capped = False
+        if thin_input and record.risk_score > THIN_INPUT_MAX_RISK:
+            thin_input_capped = True
+            record.risk_score = THIN_INPUT_MAX_RISK
+            # Zeroing `combined` is what keeps the breakdown honest: the block
+            # below derives all three components from it, so they come out at
+            # zero rather than claiming boosts that no longer applied.
+            combined = 0
+        # Report the capped total in the breakdown, not the individual raw values,
+        # so the breakdown explains the number that was actually stored.
+        breakdown_kw = combined if kw_boost else 0
+        breakdown_snd = 0
+        breakdown_urg = 0
+        if not breakdown_kw:
+            breakdown_snd = combined if snd_boost else 0
+            if not breakdown_snd:
+                breakdown_urg = combined
+        record.risk_level = risk_level_for_score(record.risk_score)
+
+        if thin_input_capped:
+            # Flag before the breakdown is built so the flag appears in it. The
+            # human-readable summary is written after generate_explanation_summary
+            # below, which would otherwise overwrite anything set here.
+            flags.append('thin_input_risk_capped')
+
         record.risk_breakdown = build_risk_breakdown(
-            base_score, ml_score, urg_boost, kw_boost, snd_boost, matched_kw, flags
+            base_score, ml_score, breakdown_urg, breakdown_kw, breakdown_snd,
+            matched_kw, flags
         )
         record.explanation_summary = generate_explanation_summary(
             record.risk_breakdown, cat, urgency['urgency_level'],
             metadata['subject'], metadata.get('body', metadata['snippet']), confidence
         )
+        if thin_input_capped:
+            # Say why the number is lower than the model's own read. Without this
+            # the stored risk simply disagrees with the category and nothing on
+            # screen explains the gap.
+            record.explanation_summary = (
+                'This message is only %d words, which is shorter than anything '
+                'the model was trained on, so its risk was capped at Medium '
+                'instead of being escalated to High. The category shown is the '
+                'model\'s read, not a confirmed judgement.'
+                % model_word_count)
 
-        if cat in ['phishing', 'malware']:
+        if cat in ['phishing', 'malware'] and not thin_input:
+            # Gated for the same reason as the reputation counter. A four-word
+            # message classified phishing would otherwise teach the system that
+            # its words are phishing vocabulary, and those words then boost every
+            # future message that contains them. "Hello How are you?" is enough
+            # to poison a common-word list.
             cnt = learn_keywords_from_email(metadata['subject'], metadata.get('body', metadata['snippet']), cat, sess, confidence)
             if cnt > 0:
                 logger.info(f"Learned {cnt} keywords from {cat} email")
+        elif cat in ['phishing', 'malware']:
+            logger.info(
+                f"Skipped keyword learning: {model_word_count} words is below "
+                f"THIN_INPUT_WORDS={THIN_INPUT_WORDS}")
 
         return {
             'id': metadata['id'], 'subject': metadata['subject'], 'sender': metadata['sender'],
@@ -461,13 +772,124 @@ def _ensure_refresh_token(token, user_email):
     return token
 
 
-def run_analysis(user_email, oauth_token, progress_callback=None):
+# ── Scan scope (date period + how many) ───────────────────────────────────────
+# One resolver for both scan paths, so the Start Analysis button and the
+# /analyze_emails route can never drift apart on what "the last 7 days, 25
+# emails" means.
+SCAN_PERIODS = ('7d', '30d', 'month', 'custom')
+# No user-facing email count any more. The modal used to offer 10/25/50 and the
+# server rejected anything outside that set, which meant "Last 7 days" meant
+# "at most 50 of the last 7 days" -- a cap the period label never mentioned.
+# Every period now takes everything in its window. This is the runaway guard for
+# "all of 2019", not a limit the user chooses.
+SCAN_UNCAPPED_MAX = 500
+_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def build_scan_query(period='30d', from_date=None, to_date=None):
+    """Turn a period choice into a Gmail search string.
+
+    '-in:trash' is always first and is not optional: the Trash fix must not be
+    bypassable by choosing a period, or deleted mail would come back the moment
+    a user picked 'Custom'.
+
+    Presets use Gmail's own relative operators rather than dates computed in
+    Python. That removes any clock-skew question and makes 'this month' genuinely
+    calendar-aware instead of a synonym for 'last 30 days'.
+
+    Custom uses before:<to>+1 day, because Gmail's before: is EXCLUSIVE. Passing
+    the user's chosen end date unmodified silently drops messages sent on the
+    final day they selected, which is the day people most want to see.
+    """
+    q = '-in:trash'
+
+    if period == '7d':
+        q += ' newer_than:7d'
+    elif period == '30d':
+        q += ' newer_than:30d'
+    elif period == 'month':
+        q += ' after:%d/%d/01' % (datetime.utcnow().year, datetime.utcnow().month)
+    elif period == 'custom':
+        if from_date:
+            q += ' after:%s' % from_date
+        if to_date:
+            try:
+                end = datetime.strptime(to_date, '%Y-%m-%d') + timedelta(days=1)
+                q += ' before:%s' % end.strftime('%Y/%m/%d')
+            except ValueError:
+                q += ' before:%s' % to_date
+    return q
+
+
+def validate_scan_scope(data):
+    """Return (period, from_date, to_date, max_count, error_message).
+
+    Rejects rather than silently defaulting. A scan that quietly analysed the
+    wrong window is worse than one that says so.
+
+    Order matters and was wrong the first time: the count check used to run
+    BEFORE the custom branch, so a client sending max_count: null for a custom
+    range was resolved to SCAN_UNCAPPED_MAX and then rejected because 500 is not
+    one of 10/25/50 -- every custom range 400'd.
+    """
+    period = (data or {}).get('period', '30d')
+    from_date = (data or {}).get('from_date') or None
+    to_date = (data or {}).get('to_date') or None
+
+    if period not in SCAN_PERIODS:
+        return None, None, None, None, 'Unknown period.'
+
+    if period == 'custom':
+        for label, val in (('From', from_date), ('To', to_date)):
+            if not val:
+                return None, None, None, None, '%s date is required for a custom range.' % label
+            if not _DATE_RE.match(val):
+                return None, None, None, None, '%s date must look like 2026-09-01.' % label
+        if from_date > to_date:
+            return None, None, None, None, 'The From date is after the To date.'
+
+    # Every period is uncapped now: the modal no longer offers a count, so the
+    # scan always takes every email in the chosen window. SCAN_UNCAPPED_MAX is
+    # the runaway guard for "all of 2019", not a user-facing limit.
+    return period, from_date, to_date, SCAN_UNCAPPED_MAX, None
+
+
+def describe_empty_scan(period, from_date=None, to_date=None):
+    """Explain an empty result in terms of what the user actually asked for.
+
+    "Inbox appears empty" was wrong twice over: the scan is usually filtered,
+    and it does not read the whole inbox. Someone who picks a two-day range and
+    sees that message goes looking for missing mail rather than a narrow window.
+    """
+    if period == 'custom' and from_date and to_date:
+        return ('No emails between %s and %s. Deleted mail is never included, so '
+                'a narrow range can come back empty. Try a wider range.'
+                % (from_date, to_date))
+    labels = {'7d': 'the last 7 days', '30d': 'the last 30 days',
+              'month': 'this month'}
+    window = labels.get(period, 'that period')
+    return ('No emails in %s. Deleted mail is never included, so a short '
+            'period can come back empty. Try a wider period.' % window)
+
+
+def run_analysis(user_email, oauth_token, progress_callback=None,
+                 period='30d', from_date=None, to_date=None, max_count=50,
+                 scan_id=None):
     oauth_token = _ensure_refresh_token(oauth_token, user_email)
     gmail_client = GmailClient(oauth_token)
-    emails = gmail_client.get_recent_emails(max_results=50)
+    # No blanket except here on purpose: GmailFetchError must reach the caller,
+    # because this path returned "No emails returned from inbox" for an expired
+    # token as well as for a real empty result.
+    emails = gmail_client.get_recent_emails(
+        max_results=max_count, query=build_scan_query(period, from_date, to_date))
 
     if not emails:
-        return None, "No emails returned from inbox"
+        return None, describe_empty_scan(period, from_date, to_date)
+
+    # After the empty check on purpose: a Gmail failure returns [] and is
+    # indistinguishable from an empty mailbox, so pruning on that path would
+    # treat a network blip as a mass deletion.
+    prune_deleted_emails(gmail_client, user_email)
 
     if progress_callback:
         progress_callback(15, f'Fetched {len(emails)} emails. Starting AI analysis...')
@@ -479,7 +901,12 @@ def run_analysis(user_email, oauth_token, progress_callback=None):
     passed = 0
     failed = 0
     logger.info(f"[ANALYSIS] Analyzing {total} emails for {user_email}")
-    BATCH = 10
+    # 10 -> 32. This does NOT reduce GPU work: predict_batch re-slices whatever
+    # it is handed into 16-item chunks, so the number of forward passes is the
+    # same either way. What it does reduce is the number of Python round-trips
+    # into predict_batch, and with it the number of times the TF-IDF vectoriser
+    # re-transforms a slice. Small, real, free.
+    BATCH = 32
 
     for batch_start in range(0, len(texts), BATCH):
         batch_texts = texts[batch_start:batch_start + BATCH]
@@ -497,7 +924,7 @@ def run_analysis(user_email, oauth_token, progress_callback=None):
                 pct = 15 + int((i / len(texts)) * 75)
                 progress_callback(pct, f'Analyzing email {i+1} of {len(texts)}: {meta["subject"][:40]}...')
 
-            result = _process_single_email(meta, pred, user_email)
+            result = _process_single_email(meta, pred, user_email, scan_id=scan_id)
             n = i + 1
             if result:
                 results.append(result)
@@ -525,7 +952,19 @@ def run_analysis(user_email, oauth_token, progress_callback=None):
         db.session.rollback()
 
     if progress_callback:
-        progress_callback(100, f'Analysis complete! Processed {len(results)} emails.')
+        # The message must not claim success it did not have. `results` contains
+        # a fallback dict for every email whose database write failed, so
+        # len(results) equals the input count even when nothing was stored --
+        # which is how a scan that silently saved nothing still reported
+        # "Processed 50 emails".
+        if failed:
+            progress_callback(
+                100,
+                'Analysis finished with problems: %d of %d could not be saved '
+                '(%d stored). See the server log for the database error.'
+                % (failed, total, passed))
+        else:
+            progress_callback(100, f'Analysis complete! Processed {len(results)} emails.')
 
     logger.info(f"[ANALYSIS] Complete — {passed} passed, {failed} failed, {total} total")
 
@@ -546,7 +985,9 @@ def _update_task(task_id, progress, status, complete=False, error=None):
                 analysis_tasks[task_id]['error'] = error
 
 
-def _run_analysis_bg(task_id, oauth_token, user_email, flask_app):
+def _run_analysis_bg(task_id, oauth_token, user_email, flask_app,
+                     period='30d', from_date=None, to_date=None, max_count=50,
+                     scan_id=None):
     class _Cancelled(Exception):
         pass
 
@@ -571,21 +1012,31 @@ def _run_analysis_bg(task_id, oauth_token, user_email, flask_app):
 
         _update_task(task_id, 10, 'Fetching emails from inbox...')
         try:
-            emails = gmail_client.get_recent_emails(max_results=50)
-        except Exception as e:
+            emails = gmail_client.get_recent_emails(
+                max_results=max_count, query=build_scan_query(period, from_date, to_date))
+        except GmailFetchError as e:
             err = str(e).lower()
-            if 'network' in err or 'connection' in err:
-                msg = 'Network error - check your internet connection'
-            elif 'auth' in err or 'token' in err:
-                msg = 'Authentication error - please login again'
+            if 'network' in err or 'connection' in err or 'timeout' in err:
+                msg = 'Network error - could not reach Gmail. Check your connection.'
+            elif 'auth' in err or 'credential' in err or 'token' in err or 'permission' in err:
+                msg = 'Gmail rejected the request - your login has expired. Please log out and log in again.'
             else:
-                msg = f'Failed to fetch emails: {str(e)}'
+                msg = f'Could not fetch emails from Gmail: {e}'
             _update_task(task_id, 0, msg, complete=True, error=msg)
             return
 
         if not emails:
-            _update_task(task_id, 0, 'No emails found', complete=True, error='Inbox appears empty')
+            # A query that matched nothing is NOT an empty inbox, and saying so
+            # sends the user hunting for a problem they do not have. Name the
+            # window that came back empty.
+            msg = describe_empty_scan(period, from_date, to_date)
+            _update_task(task_id, 0, 'No emails found', complete=True, error=msg)
             return
+
+        # Same placement as the sync path: after the empty check, so a failed
+        # fetch can never be read as "the user deleted everything".
+        with flask_app.app_context():
+            prune_deleted_emails(gmail_client, user_email)
 
         _update_task(task_id, 15, f'Fetched {len(emails)} emails. Starting AI analysis...')
 
@@ -596,7 +1047,7 @@ def _run_analysis_bg(task_id, oauth_token, user_email, flask_app):
         passed = 0
         failed = 0
         logger.info(f"[ANALYSIS] Analyzing {total} emails for {user_email}")
-        BATCH = 10
+        BATCH = 32   # matches the sync path; see the note there
 
         with flask_app.app_context():
             for bs in range(0, len(texts), BATCH):
@@ -619,7 +1070,7 @@ def _run_analysis_bg(task_id, oauth_token, user_email, flask_app):
                     pct = 15 + int((i / len(texts)) * 75)
                     _update_task(task_id, pct, f'Analyzing email {i+1}/{len(texts)}: {meta["subject"][:40]}...')
 
-                    result = _process_single_email(meta, bp[j], user_email, db.session)
+                    result = _process_single_email(meta, bp[j], user_email, db.session, scan_id=scan_id)
                     n = i + 1
                     if result:
                         results.append(result)
@@ -641,7 +1092,14 @@ def _run_analysis_bg(task_id, oauth_token, user_email, flask_app):
                 logger.error(f"BG commit failed: {e}")
                 db.session.rollback()
 
-        _update_task(task_id, 100, f'Analysis complete! Processed {len(emails)} emails.', complete=True)
+        if failed:
+            _update_task(task_id, 100,
+                         'Analysis finished with problems: %d of %d could not be '
+                         'saved (%d stored). Check the server log.'
+                         % (failed, total, passed),
+                         complete=True)
+        else:
+            _update_task(task_id, 100, f'Analysis complete! Processed {len(emails)} emails.', complete=True)
         logger.info(f"[ANALYSIS] Complete — {passed} passed, {failed} failed, {total} total")
 
     except _Cancelled:
@@ -797,9 +1255,21 @@ def analytics():
         return redirect(url_for('login'))
 
     try:
-        recent = Email.query.filter_by(user_email=user_email).order_by(Email.updated_at.desc()).limit(50).all()
-        if not recent:
+        # Scoped to the scan the user just ran.
+        #
+        # This was `filter_by(user_email=...)` with no scan filter and a
+        # `.limit(50)`, so Analytics described an arbitrary 50 rows drawn from
+        # every scan ever run. On a 500-email scan it showed a slice of 50 and
+        # the totals disagreed with the Results page on the same data.
+        scan_id, scan_scope = resolve_scan(user_email)
+        if not scan_id:
             flash('No analysis results found. Please run the analysis first.', 'info')
+            return redirect(url_for('dashboard'))
+
+        recent = (Email.query.filter_by(user_email=user_email, scan_id=scan_id)
+                  .order_by(Email.updated_at.desc()).all())
+        if not recent:
+            flash('No analysis results found for this scan. Please run the analysis first.', 'info')
             return redirect(url_for('dashboard'))
 
         cat_counts = empty_category_counts()
@@ -811,7 +1281,18 @@ def analytics():
         avg_urgency = round(sum(urgency_scores) / len(urgency_scores), 1) if urgency_scores else 0
         high_urgency = sum(1 for e in recent if e.urgency_score and e.urgency_score >= 70)
 
-        top5 = sorted([e for e in recent if e.urgency_score], key=lambda e: e.urgency_score, reverse=True)[:5]
+        # The Top 5 table carried a "Last 7 Days" badge but was built from the
+        # whole scan with no date filter, so it showed Aug and Sep rows under a
+        # 7-day label. The user asked for the badge to go, but deleting the label
+        # while leaving the data unscoped would just hide the bug, so the query
+        # is scoped to match what the card claims to show. If the 7-day window
+        # has nothing, it says so rather than silently falling back to the whole
+        # scan, which is what made the label wrong in the first place.
+        seven_ago_top = seven_days_ago_local()
+        recent_7d = [e for e in recent if e.date and e.date >= seven_ago_top]
+        top5_source = recent_7d if recent_7d else []
+        top5 = sorted([e for e in top5_source if e.urgency_score],
+                      key=lambda e: e.urgency_score, reverse=True)[:5]
         top5_data = [{
             'id': e.id, 'subject': e.subject, 'sender': e.sender,
             'date': format_user_date(e.date), 'category': e.category,
@@ -823,7 +1304,7 @@ def analytics():
         risk_med = sum(1 for e in recent if e.risk_score is not None and 41 <= e.risk_score <= 60)
         risk_high = sum(1 for e in recent if e.risk_score is not None and 61 <= e.risk_score <= 100)
 
-        seven_ago = datetime.utcnow() - timedelta(days=7)
+        seven_ago = seven_days_ago_local()
         trend_emails = Email.query.filter(Email.user_email == user_email, Email.date >= seven_ago, Email.risk_score.isnot(None)).all()
 
         today_tz_str = format_user_tz(datetime.utcnow(), '%Y-%m-%d')
@@ -850,12 +1331,19 @@ def analytics():
             'total_count': len(recent), 'avg_urgency': avg_urgency, 'high_urgency_count': high_urgency,
             'category_counts': dict(sorted(cat_counts.items(), key=lambda x: x[1], reverse=True)),
             'top_5_high_urgency': top5_data,
+        # Dynamic so the card header can state the real window instead of
+        # asserting "Last 7 Days" unconditionally.
+        'top_urgency_window_label': ('Last 7 Days' if recent_7d
+                                     else 'No emails in the last 7 days'),
             'chart_labels': CHART_LABELS_ALT, 'chart_data': chart_data_from_counts(cat_counts, CHART_LABELS_ALT),
             'risk_percentage': int(risk_pct), 'risk_level': rlevel, 'risk_badge_color': rcolor,
             'risk_distribution': {'Low': risk_low, 'Medium': risk_med, 'High': risk_high},
             'risk_trend_dates': dates7, 'risk_trend_values': risk_trend_values,
             'last_scan_time': format_user_date(latest_update),
             'last_scan_time_utc': latest_update.isoformat() + 'Z',
+            # Shown beside the Analytics heading so the numbers are attributable
+            # to a known window instead of floating free.
+            'scope_label': describe_scope(session.get('scan_scope')),
         }
         resp = make_response(render_template('analytics.html', analytics=data))
         resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -876,7 +1364,7 @@ def threat_console():
         return redirect(url_for('login'))
 
     try:
-        seven_ago = datetime.utcnow() - timedelta(days=7)
+        seven_ago = seven_days_ago_local()
 
         today_tz_str = format_user_tz(datetime.utcnow(), '%Y-%m-%d')
         today_tz_dt = datetime.strptime(today_tz_str, '%Y-%m-%d')
@@ -962,14 +1450,130 @@ def _email_to_dict(e):
     }
 
 
+def paginate(query, page):
+    """Page a query at a fixed 50 rows and clamp out-of-range pages.
+
+    total_pages, page, has_prev and has_next were computed in results_page and
+    then never passed to the template, so `{% if total_pages and total_pages > 1 %}`
+    was always false and the results page rendered no pagination controls at all.
+    A 500-email scan showed its first 50 and nothing else.
+
+    The page size is a constant, not derived from the total. That matters when a
+    category filter is active: picking Spam must show all 4 spams on one page,
+    not switch the page size because 4 happens to be under some threshold.
+
+    One helper for both read pages so they cannot drift apart again.
+    """
+    total = query.count()
+    size = RESULTS_PER_PAGE
+    if total == 0:
+        return [], dict(total=0, total_pages=0, page=1, page_size=size,
+                        has_prev=False, has_next=False)
+    total_pages = max(1, (total + size - 1) // size)
+    page = max(1, min(page, total_pages))       # ?page=99 on 2 pages -> page 2
+    rows = query.offset((page - 1) * size).limit(size).all()
+    return rows, dict(total=total, total_pages=total_pages, page=page,
+                      page_size=size, has_prev=page > 1, has_next=page < total_pages)
+
+
+def resolve_scan(user_email):
+    """The scan id to render, and its scope dict.
+
+    Order: the session copy, then the durable scan_sessions row, then the newest
+    scan that actually has rows.
+
+    This exists because current_scan_id lived only in the Flask session. Closing
+    the browser or opening a new tab discarded it, and /results and /last-scan
+    both redirected to the dashboard with "No scan has been run in this session"
+    while the emails were still sitting in the database. The session is kept as
+    the fast path so a live request never touches this table.
+
+    Returns (scan_id, scope) or (None, None). Rehydrates the session on the way
+    out so later code in the same request can keep reading the old key.
+
+    Every candidate is VALIDATED against the emails table. An earlier version
+    returned the session's scan_id unchecked, and because re-scans prune older
+    rows a session could hold an id that no longer had any emails -- the views
+    then took their `if not rows` branch and bounced back to the dashboard even
+    though the database was full.
+    """
+    def _has_rows(sid):
+        if not sid:
+            return False
+        try:
+            return Email.query.filter_by(
+                user_email=user_email, scan_id=sid).first() is not None
+        except Exception:
+            db.session.rollback()
+            return False
+
+    scan_id = session.get('current_scan_id')
+    if scan_id and _has_rows(scan_id):
+        return scan_id, session.get('scan_scope')
+    # Stale or missing: fall through and re-resolve.
+
+    row = ScanSession.recall(user_email)
+    if row is not None:
+        session['current_scan_id'] = row.scan_id
+        if row.scope_json:
+            try:
+                session['scan_scope'] = row.to_dict()['scope']
+            except Exception:
+                pass
+        return row.scan_id, session.get('scan_scope')
+
+    # Last resort: the newest scan that actually has rows. This is what makes the
+    # pages work at all after a restart, instead of bouncing to the dashboard.
+    try:
+        newest = (Email.query
+                  .filter(Email.user_email == user_email, Email.scan_id.isnot(None))
+                  .order_by(Email.updated_at.desc()).first())
+    except Exception:
+        db.session.rollback()
+        newest = None
+    if newest is not None and newest.scan_id:
+        session['current_scan_id'] = newest.scan_id
+        return newest.scan_id, session.get('scan_scope')
+    return None, session.get('scan_scope')
+
+
+def describe_scope(scope):
+    """Human label for what the last scan covered, e.g. 'Last 30 days'."""
+    if not scope:
+        return None
+    period = scope.get('period')
+    f, t = scope.get('from_date'), scope.get('to_date')
+    if period == 'custom' and f and t:
+        return 'Custom %s to %s Emails' % (f, t)
+    return {'7d': 'Last 7 days Emails', '30d': 'Last 30 days Emails',
+            'month': 'This month Emails'}.get(period)
+
+
 def _build_results_summary(results):
+    # The summary must describe the WHOLE scan, never one page of it. It used to
+    # be built from the 50 rows currently on screen, which is why a 500-email
+    # scan reported "50 Total Emails" and why the numbers would have changed as
+    # you paged. Callers now pass every row in the scan.
     if not results:
         return None
     cats = empty_category_counts()
     for r in results:
         if r['category'] in cats:
             cats[r['category']] += 1
-    spam_count = sum(1 for r in results if r['is_spam'])
+    # Threats are counted the way the Threats BUTTON filters them
+    # (category in THREAT_CATEGORIES), NOT by the is_spam flag.
+    #
+    # is_spam is true for every category except legitimate, so counting it put
+    # all 273 Promotions and 22 Newsletters inside the Threats total. The card
+    # read 315 while clicking Threats listed 20, which made the card look wrong
+    # rather than making the two disagree.
+    #
+    # This drives both the "Threats" card and the "Threat Rate" card, because
+    # spam_percentage below derives from the same count. Scoped to the results
+    # and last-scan pages: those are the only callers of this function, and
+    # results.html is the only reader of these two keys.
+    spam_count = sum(1 for r in results
+                     if r['category'] in THREAT_CATEGORIES)
     high_risk = sum(1 for r in results if r['risk_score'] >= 70)
     high_urg = sum(1 for r in results if r.get('urgency_level') == 'High')
     med_urg = sum(1 for r in results if r.get('urgency_level') == 'Medium')
@@ -998,32 +1602,201 @@ def results_page():
         cat_filter = request.args.get('category', 'all')
         sort_by = request.args.get('sort', 'date')
         page = max(request.args.get('page', 1, type=int), 1)
+        # 'all' shows everything ever analysed; anything else shows one scan.
+        scope = request.args.get('scope', 'current')
+        # The All / Threats / Safe group, now applied server-side. An
+        # unrecognised value falls back to 'all' rather than silently
+        # returning an empty page.
+        view_filter = request.args.get('view', 'all')
+        if view_filter not in VIEW_FILTERS:
+            view_filter = 'all'
 
-        query = Email.query.filter_by(user_email=user_email)
+        # TWO QUERIES ON PURPOSE.
+        #
+        # base_query is scan-scoped but UNFILTERED and backs every statistic:
+        # the tiles, the Category Distribution card and the page count. query
+        # adds the category filter and backs only the email list.
+        #
+        # They used to be the same query, so the moment you picked a category
+        # the summary was rebuilt from that category alone and every other
+        # category displayed 0. The breakdown has to stay stable while you
+        # filter, otherwise you cannot tell where you are.
+        base_query = Email.query.filter_by(user_email=user_email)
+        if scope != 'all':
+            scan_id, _scope = resolve_scan(user_email)
+            if scan_id:
+                base_query = base_query.filter(Email.scan_id == scan_id)
+            else:
+                # No scan has run AND none is remembered. Showing every
+                # historical row would be the old confusing behaviour, so say so.
+                flash('No scan has been run in this session. Run an analysis first.',
+                      'info')
+                return redirect(url_for('dashboard'))
+
+        query = base_query
         if cat_filter != 'all' and cat_filter in CATEGORIES_ALL:
             query = query.filter(Email.category == cat_filter)
+
+        # The All / Threats / Safe group. This used to be a client-side
+        # display:none loop over the rows already in the DOM, which is blind to
+        # every page except the current one -- the same defect the category
+        # dropdown had. It is a real filter now, so it has to be applied here
+        # where the whole scan is visible.
+        #
+        # `threat` is category-driven rather than is_spam: is_spam is
+        # `category != 'legitimate'`, which counts every newsletter and
+        # promotion as a threat. That definition is still parked, but routing
+        # through it here would make the button disagree with the Category
+        # Distribution counts directly above it.
+        if view_filter == 'threat':
+            query = query.filter(Email.category.in_(THREAT_CATEGORIES))
+        elif view_filter == 'safe':
+            query = query.filter(Email.category == 'legitimate')
 
         if sort_by == 'urgency':
             query = query.order_by(Email.urgency_score.desc())
         else:
             query = query.order_by(Email.date.desc())
 
-        total = query.count()
-        emails = query.offset((page - 1) * RESULTS_PER_PAGE).limit(RESULTS_PER_PAGE).all()
-        total_pages = (total + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE
+        # Statistics come from base_query (the whole scan, category filter ignored).
+        # The list below comes from query (filtered, one page).
+        all_rows = base_query.all()
+        scan_total = len(all_rows)
+        rows, meta = paginate(query, page)
 
-        if not emails:
-            flash('No analysis results found. Please run the analysis first.', 'info')
+        # ONLY an empty SCAN is fatal. An empty FILTER is a valid answer.
+        #
+        # The guard used to be `if not rows`, where rows is the filtered page
+        # slice -- so picking a category with zero emails (Phishing, Malware or
+        # Spam on most inboxes) was indistinguishable from "the scan is empty".
+        # The view then flashed "No emails in this scan. Run a wider analysis",
+        # which was also factually wrong -- the scan had 24 emails -- and
+        # redirected to the dashboard, throwing the user out of a page they had
+        # not left. The zero-match case now renders in place instead.
+        if scan_total == 0:
+            flash('This scan returned no emails. Try a wider date range.', 'info')
             return redirect(url_for('dashboard'))
 
-        results = [_email_to_dict(e) for e in emails]
-        summary = _build_results_summary(results)
+        results = [_email_to_dict(e) for e in rows]
+        summary = _build_results_summary([_email_to_dict(e) for e in all_rows])
+        # With a category filter the list is a subset, so the pager's denominator
+        # must be the filtered total rather than the scan total.
+        meta['total'] = query.count()
         return render_template('results.html', results=results, summary=summary,
-                               current_category=cat_filter, current_sort=sort_by)
+                               current_category=cat_filter, current_sort=sort_by,
+                               current_scope=scope, current_view=view_filter,
+                               scan_total=scan_total,
+                               scope_label=describe_scope(session.get('scan_scope')),
+                               **meta)
     except Exception as e:
         logger.error(f"Error in results_page: {e}")
         flash(f'Error loading results: {e}', 'error')
         return redirect(url_for('dashboard'))
+
+
+def _cat_meta():
+    """Icon, label and colour per category, for the client-side label swap."""
+    return {
+        'all': ['fa-tag', 'All Categories', ''],
+        'spam': ['fa-exclamation-triangle', 'Spam', 'var(--color-spam)'],
+        'phishing': ['fa-skull-crossbones', 'Phishing', 'var(--color-phishing)'],
+        'malware': ['fa-virus', 'Malware', 'var(--color-malware)'],
+        'promotion': ['fa-bullhorn', 'Promotion', 'var(--color-promotion)'],
+        'newsletter': ['fa-newspaper', 'Newsletter', 'var(--color-newsletter)'],
+        'legitimate': ['fa-check-circle', 'Not Spam', 'var(--color-legitimate)'],
+    }
+
+
+@app.route('/results-fragment')
+@login_required
+def results_fragment():
+    """The parts of the results view that change when you filter or paginate.
+
+    Filter and page links used to be ordinary navigations, so every click threw
+    the page away and re-rendered it. The client fetches this instead and swaps
+    in the row list, the pager and the count line, leaving the header, the
+    summary tiles and the category breakdown untouched -- those describe the
+    whole scan and do not depend on the filter.
+
+    JSON rather than HTML so the client needs no parser. The links stay real
+    hrefs underneath, so if this request fails the browser navigates normally
+    and the page still works.
+    """
+    user_email = get_user_email()
+    if not user_email:
+        return jsonify({'error': 'not_authenticated'}), 401
+
+    cat_filter = request.args.get('category', 'all')
+    sort_by = request.args.get('sort', 'date')
+    view_filter = request.args.get('view', 'all')
+    if view_filter not in VIEW_FILTERS:
+        view_filter = 'all'
+    page = max(request.args.get('page', 1, type=int), 1)
+
+    scan_id, _scope = resolve_scan(user_email)
+    if not scan_id:
+        return jsonify({'error': 'no_scan'}), 409
+
+    try:
+        query = Email.query.filter_by(user_email=user_email, scan_id=scan_id)
+        if cat_filter != 'all' and cat_filter in CATEGORIES_ALL:
+            query = query.filter(Email.category == cat_filter)
+        if view_filter == 'threat':
+            query = query.filter(Email.category.in_(THREAT_CATEGORIES))
+        elif view_filter == 'safe':
+            query = query.filter(Email.category == 'legitimate')
+        if sort_by == 'urgency':
+            query = query.order_by(Email.urgency_score.desc())
+        else:
+            query = query.order_by(Email.date.desc())
+
+        rows, meta = paginate(query, page)
+
+        # A filter that matches NOTHING is a valid answer, not an error, so this
+        # returns 200 with an empty body. It used to return 404, and the client's
+        # catch treats any non-200 as a reason to fall back to
+        # window.location.href -- which is precisely the full page reload the
+        # filter was supposed to avoid.
+        #
+        # The genuinely-fatal cases keep their status codes so the client can
+        # tell them apart: no_scan (409) means the scan is gone, and
+        # not_authenticated (401) means the login expired.
+        rows_html = ''
+        cards_html = ''
+        if rows:
+            # Markup comes from the SAME Jinja macros the full page uses
+            # (email_row / email_card in _email_row_macro.html), rendered through
+            # the small _email_rows_fragment.html template.
+            #
+            # BOTH parts are needed. Swapping only the desktop table left the
+            # mobile card grid showing the UNFILTERED list, so on a phone the
+            # cards and the pager disagreed -- with Phishing selected the table
+            # read "No phishing emails in this scan" while 24 cards sat below it.
+            # Found by looking at the page on a narrow viewport.
+            #
+            # Two earlier approaches were tried and both are wrong:
+            #   * template.module.email_row -- .module renders the whole template,
+            #     and results.html extends base.html which needs `current_user`
+            #     from Flask-Login's context processor. That raised
+            #     UndefinedError and this endpoint returned 500.
+            #   * rebuilding the row in JavaScript -- it drifted at once, printing
+            #     the raw category slug and an unrounded confidence.
+            both = [_email_to_dict(r) for r in rows]
+            rows_html = render_template('_email_rows_fragment.html',
+                                        part='rows', emails=both)
+            cards_html = render_template('_email_rows_fragment.html',
+                                         part='cards', emails=both)
+        return jsonify({
+            'rows_html': rows_html,
+            'cards_html': cards_html,
+            'meta': meta,
+            'cat_meta': _cat_meta(),
+            'view': view_filter,
+            'sort': sort_by,
+        })
+    except Exception as e:
+        logger.error(f"Error in results_fragment: {e}")
+        return jsonify({'error': 'server_error'}), 500
 
 
 @app.route('/last-scan')
@@ -1035,21 +1808,65 @@ def last_scan_page():
         return redirect(url_for('login'))
 
     try:
-        recent = Email.query.filter_by(user_email=user_email).order_by(Email.date.desc()).limit(50).all()
-        if not recent:
-            flash('No scan results found. Run an analysis first.', 'info')
+        scan_id, _scope = resolve_scan(user_email)
+        if not scan_id:
+            flash('No scan has been run in this session. Run an analysis first.', 'info')
             return redirect(url_for('dashboard'))
 
-        results = [_email_to_dict(e) for e in recent]
-        summary = _build_results_summary(results)
+        page = max(request.args.get('page', 1, type=int), 1)
+        # Same three params as /results, so the filter controls and pager work
+        # identically on both pages -- they render the same template.
+        cat_filter = request.args.get('category', 'all')
+        sort_by = request.args.get('sort', 'date')
+        view_filter = request.args.get('view', 'all')
+        if view_filter not in VIEW_FILTERS:
+            view_filter = 'all'
+
+        query = Email.query.filter_by(user_email=user_email, scan_id=scan_id)
+        if cat_filter != 'all' and cat_filter in CATEGORIES_ALL:
+            query = query.filter(Email.category == cat_filter)
+        if view_filter == 'threat':
+            query = query.filter(Email.category.in_(THREAT_CATEGORIES))
+        elif view_filter == 'safe':
+            query = query.filter(Email.category == 'legitimate')
+
+        if sort_by == 'urgency':
+            query = query.order_by(Email.urgency_score.desc())
+        else:
+            query = query.order_by(Email.date.desc())
+
+        all_rows = Email.query.filter_by(user_email=user_email,
+                                         scan_id=scan_id).all()
+        scan_total = len(all_rows)
+        rows, meta = paginate(query, page)
+
+        # Same rule as results_page: only an empty SCAN is fatal. A filter that
+        # matches nothing renders in place with an empty list, because the user
+        # is still on the results page and should not be thrown to the dashboard.
+        if scan_total == 0:
+            flash('This scan returned no emails. Try a wider date range.', 'info')
+            return redirect(url_for('dashboard'))
+
+        # Summary covers the whole scan, the list below is one page of it.
+        results = [_email_to_dict(e) for e in rows]
+        summary = _build_results_summary([_email_to_dict(e) for e in all_rows])
         if summary:
-            scan_ts = recent[0].updated_at or datetime.utcnow()
+            # all_rows[0], not rows[0]: rows is the FILTERED page slice and is
+            # empty when a category filter matches nothing, so rows[0] raised
+            # IndexError -- caught by the handler below, which redirected to the
+            # dashboard with a misleading "Error loading results" flash.
+            scan_ts = all_rows[0].updated_at or datetime.utcnow()
             summary['analysis_date'] = format_user_tz(scan_ts, '%d-%m-%Y %I:%M %p')
             summary['analysis_date_utc'] = scan_ts.isoformat() + 'Z'
 
+        meta['total'] = query.count()
         return render_template('results.html', results=results, summary=summary,
-                               current_category='all', current_sort='date',
-                               page_title='Last Scan Results', is_last_scan=True)
+                               current_category=cat_filter, current_sort=sort_by,
+                               page_title='Last Scan Results', is_last_scan=True,
+                               current_scope='current', current_view=view_filter,
+                               scan_total=scan_total,
+                               scope_label=describe_scope(session.get('scan_scope')),
+                               **meta)
     except Exception as e:
         logger.error(f"Error in last_scan_page: {e}")
         flash(f'Error loading results: {e}', 'error')
@@ -1074,7 +1891,21 @@ def analyze_emails():
 
     try:
         start = datetime.now()
-        results, err = run_analysis(user_email, oauth_token)
+        try:
+            results, err = run_analysis(user_email, oauth_token)
+        except GmailFetchError as e:
+            # run_analysis deliberately lets this propagate rather than
+            # reporting an empty inbox, so the route has to translate it. Without
+            # this it landed in the generic handler below as a red 500.
+            err_text = str(e).lower()
+            if 'credential' in err_text or 'auth' in err_text or 'token' in err_text:
+                flash('Gmail rejected the request - your login has expired. '
+                      'Please log out and log in again.', 'error')
+            elif 'network' in err_text or 'timeout' in err_text:
+                flash('Could not reach Gmail. Check your connection and try again.', 'error')
+            else:
+                flash('Could not fetch emails from Gmail: %s' % e, 'error')
+            return redirect(url_for('dashboard'))
         if err:
             flash(f'Analysis issue: {err}', 'warning')
             return redirect(url_for('dashboard'))
@@ -1112,13 +1943,54 @@ def analyze_text():
         if len(text) > MAX_INPUT_LENGTH:
             return jsonify({'error': f'Text too long. Maximum {MAX_INPUT_LENGTH} characters.'}), 400
 
+        # How much readable text is actually here. isalpha() counts accented
+        # letters as letters and rejects emoji, which is the behaviour we want.
+        letter_count = sum(1 for ch in text if ch.isalpha())
+        word_count = len(text.split())
+
+        # Refuse rather than invent a category. See MIN_LETTERS_TO_JUDGE.
+        #
+        # This returns NO category, NO risk_score and NO probabilities on
+        # purpose. The client must branch on judgeable before rendering; if it
+        # fell through to the normal renderer it would hit
+        # `data.category || 'legitimate'` and paint a green "Not Spam" card,
+        # which is a worse lie than the one being replaced.
+        if letter_count <= MIN_LETTERS_TO_JUDGE:
+            return jsonify({
+                'judgeable': False,
+                'letter_count': letter_count,
+                'word_count': word_count,
+                'message': 'Not enough text to analyse',
+                'detail': (
+                    'That was %d letter%s and %d word%s. Paste a few sentences '
+                    'of the email and we will check it.'
+                    % (letter_count, '' if letter_count == 1 else 's',
+                       word_count, '' if word_count == 1 else 's')
+                ),
+            })
+
         start = datetime.now()
         try:
             pred = predictor.predict_single(text)
         except Exception:
             return jsonify({'error': 'Model temporarily unavailable'}), 503
 
+        # State B: judge it, but say out loud how little there was. There is no
+        # reliable model-side signal for this -- vocabulary coverage and the
+        # top-1/top-2 margin were both measured and neither separates a right
+        # answer from a wrong one -- so the count of readable text is the only
+        # honest basis available.
+        note = None
+        if letter_count <= SHORT_INPUT_LETTERS:
+            note = ('Only %d word%s and %d letters. That is a very short piece '
+                    'of text, so treat this result with some care.'
+                    % (word_count, '' if word_count == 1 else 's', letter_count))
+
         result = {
+            'judgeable': True,
+            'letter_count': letter_count,
+            'word_count': word_count,
+            'note': note,
             'category': pred['category'], 'category_info': predictor.get_category_info(pred['category']),
             'is_spam': pred['is_spam'], 'risk_score': pred['risk_score'], 'risk_level': pred['risk_level'],
             'confidence': pred['confidence'],
@@ -1361,18 +2233,47 @@ def start_analysis():
     if not oauth_token or not user_email:
         return jsonify({'error': 'Authentication required. Please login again.'}), 401
 
+    # Scan scope. The body is optional so an older cached page that sends nothing
+    # still gets exactly the previous behaviour rather than a 400.
+    scope = request.get_json(silent=True) or {}
+    period, from_date, to_date, max_count, err = validate_scan_scope(scope)
+    if err:
+        return jsonify({'error': err}), 400
+
     task_id = secrets.token_urlsafe(8)
+    # Identifies this run. Stored rows carry it so /results and /last-scan can
+    # show the scan the user just chose rather than every email ever analysed.
+    scan_id = secrets.token_hex(8)
+    session['current_scan_id'] = scan_id
+    # The human-readable half of the scope, so Results, Last Scan and Analytics
+    # can all say what was scanned without re-deriving it from a query string.
+    scope = {'period': period, 'from_date': from_date,
+             'to_date': to_date, 'max_count': max_count}
+    session['scan_scope'] = scope
+    # Also write it outside the session. The session copy is lost on browser
+    # restart, which used to send /results and /last-scan straight back to the
+    # dashboard even though the emails were in the database.
+    ScanSession.remember(get_user_email(), scan_id, scope)
     with analysis_tasks_lock:
         analysis_tasks[task_id] = {
             'progress': 0, 'status': 'Initializing...', 'user_email': user_email,
             'complete': False, 'cancelled': False, 'error': None,
             'timestamp': datetime.now().timestamp(),
+            'scan_id': scan_id,
+            'scope': {'period': period, 'from_date': from_date,
+                      'to_date': to_date, 'max_count': max_count},
         }
 
-    t = threading.Thread(target=_run_analysis_bg, args=(task_id, oauth_token, user_email, app), daemon=True)
+    t = threading.Thread(target=_run_analysis_bg,
+                         args=(task_id, oauth_token, user_email, app,
+                               period, from_date, to_date, max_count, scan_id),
+                         daemon=True)
     t.start()
-    logger.info(f"Started async analysis task {task_id} for user {user_email}")
-    return jsonify({'task_id': task_id, 'status': 'started', 'message': f'Poll /api/analysis_status/{task_id}'})
+    logger.info(f"Started async analysis task {task_id} for user {user_email} "
+                f"(period={period}, count={max_count}, scan={scan_id})")
+    return jsonify({'task_id': task_id, 'status': 'started', 'scan_id': scan_id,
+                    'scope': {'period': period, 'max_count': max_count},
+                    'message': f'Poll /api/analysis_status/{task_id}'})
 
 
 @app.route('/api/cancel_analysis/<task_id>', methods=['POST'])

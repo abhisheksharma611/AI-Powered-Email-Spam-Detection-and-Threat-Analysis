@@ -49,10 +49,10 @@
                         </div>
                         <div>
                             <h5 class="mb-1">Analyze Inbox</h5>
-                            <small class="text-active">Scan 50 recent emails for threats</small>
+                            <small class="text-active" id="scanSummary">Scan 50 recent emails for threats</small>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-primary" id="analyzeEmailsBtn" onclick="startAsyncAnalysis()">
+                    <button type="button" class="btn btn-primary" id="analyzeEmailsBtn" onclick="openScanModal()">
                         <span class="btn-content">
                             <i class="fas fa-play"></i> Start Analysis
                         </span>
@@ -267,6 +267,73 @@
 </div>
 
 <!-- Enhanced Text Analysis Modal -->
+<!-- Scan scope. A modal rather than an inline panel: the inline version made
+     the Analyze Inbox card three times taller than its neighbour and wrapped
+     "Custom" onto two lines. This keeps the dashboard grid intact. -->
+<div class="modal fade" id="scanScopeModal" tabindex="-1" aria-labelledby="scanScopeTitle">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="scanScopeTitle">
+                    <i class="fas fa-search"></i> Scan Inbox
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-active small mb-4" id="scanSummaryModal">
+                    Choose how far back to look and how many emails to analyse.
+                </p>
+
+                <label class="form-label">Period</label>
+                <div class="row g-2 mb-4" role="group" aria-label="Period">
+                    <div class="col-6 col-md-3">
+                        <input type="radio" class="btn-check" name="scanPeriod" id="p7d" value="7d">
+                        <label class="btn btn-outline-secondary w-100" for="p7d">7 days</label>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <input type="radio" class="btn-check" name="scanPeriod" id="p30d" value="30d" checked>
+                        <label class="btn btn-outline-secondary w-100" for="p30d">30 days</label>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <input type="radio" class="btn-check" name="scanPeriod" id="pmonth" value="month">
+                        <label class="btn btn-outline-secondary w-100" for="pmonth">This month</label>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <input type="radio" class="btn-check" name="scanPeriod" id="pcustom" value="custom">
+                        <label class="btn btn-outline-secondary w-100" for="pcustom">Custom</label>
+                    </div>
+                </div>
+
+                <div id="customRange" class="d-none mb-4">
+                    <label class="form-label">Custom range</label>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small text-active" for="scanFrom">From</label>
+                            <input type="date" id="scanFrom" class="form-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small text-active" for="scanTo">To</label>
+                            <input type="date" id="scanTo" class="form-control">
+                        </div>
+                    </div>
+                </div>
+
+                <p class="form-text mb-0" id="scanScopeNote">
+                    Every email in the period you choose is fetched and analysed.
+                </p>
+
+                <div id="scanError" class="alert alert-danger d-none mt-3 mb-0 py-2 small"></div>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary px-4" id="scanConfirmBtn" onclick="startAsyncAnalysis()">
+                    <span class="btn-content"><i class="fas fa-play"></i> Start Analysis</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="textAnalysisModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
@@ -383,6 +450,77 @@
     font-size: 1rem;
     padding: 0.5rem 1rem;
 }
+
+/* ── Scan Inbox modal ─────────────────────────────────────
+   THIS MODAL IS LIGHT. Only the header carries a dark background; the body is
+   the stock white Bootstrap surface. The first version of this block assumed a
+   dark modal and set labels, hints and date text to white, which rendered
+   white-on-white and made the whole form look blank. Every colour below is now
+   chosen against a white .modal-body.
+
+   The selected period stays pinned to the app blue with white text -- that is
+   the one place white-on-colour is correct, and it reads unambiguously. */
+#scanScopeModal .btn-check:checked + .btn-outline-secondary {
+    background-color: var(--bs-primary, #0ea5e9) !important;
+    border-color: var(--bs-primary, #0ea5e9) !important;
+    color: #fff !important;
+    font-weight: 600;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, .25);
+}
+/* Hover must NOT set white text. These buttons sit on white, so a blue tint
+   under white type was the invisible "This month" in the screenshot. */
+#scanScopeModal .btn-outline-secondary:hover,
+#scanScopeModal .btn-outline-secondary:focus-visible {
+    background-color: rgba(14, 165, 233, .10);
+    border-color: var(--bs-primary, #0ea5e9);
+    color: #0b3a5d;
+}
+
+/* Date inputs: the native control is kept on purpose -- keyboard accessible,
+   localised and free. A hand-built calendar would be ~200 lines reimplementing
+   what the OS already does. color-scheme stays light so the browser's own
+   picker matches the white modal, and the indicator is left un-inverted: the
+   earlier invert(1) turned the dark glyph pale and it disappeared on white. */
+#scanScopeModal input[type="date"] {
+    color-scheme: light;
+    background-color: #fff;
+    border: 1px solid #ced4da;
+    border-radius: .375rem;
+    color: #212529;
+    height: calc(1.5em + .75rem + 2px);
+    padding: .375rem .75rem;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+#scanScopeModal input[type="date"]:focus {
+    background-color: #fff;
+    border-color: var(--bs-primary, #0ea5e9);
+    box-shadow: 0 0 0 .2rem rgba(14, 165, 233, .2);
+    color: #212529;
+}
+#scanScopeModal input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: .6;
+    cursor: pointer;
+    filter: none;
+    transition: opacity .15s ease;
+}
+#scanScopeModal input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+#scanScopeModal input[type="date"]::-webkit-datetime-edit { color: #212529; }
+
+/* Labels, hints and the scope summary. `.text-active` is not defined anywhere in
+   this project, so these inherit the body colour -- which style.css flips to
+   #ffffff inside its mobile dark block. Pinning them here keeps the form
+   readable if that block is ever widened to desktop. */
+#scanScopeModal .form-label {
+    color: #212529;
+    font-weight: 600;
+    letter-spacing: .01em;
+    margin-bottom: .35rem;
+}
+#scanScopeModal .form-label.text-active { color: #495057 !important; }
+#scanScopeModal .form-text { color: #6c757d; }
+#scanScopeModal #scanSummaryModal { color: #495057; }
+#scanScopeModal .modal-footer .btn-outline-secondary { color: #212529; }
+#scanScopeModal .modal-footer .btn-outline-secondary:hover { color: #0b3a5d; }
 
 /* Floating modal for all devices */
 #textAnalysisModal .modal-dialog.modal-lg {
@@ -655,6 +793,14 @@ function handleTextAnalysis(e) {
         clearTimeout(backupTimer);
         if (data.error) {
             resultsContent.innerHTML = createErrorMessage(data.error);
+        } else if (data.judgeable === false) {
+            // MUST come before displayAnalysisResults(). That function does
+            // `data.category || 'legitimate'`, so an unjudgeable response that
+            // reached it would render a green "Not Spam / Safe and legitimate
+            // email content" card. Refusing to judge would then look like a
+            // clean bill of health, which is worse than the wrong answer this
+            // guard exists to stop.
+            displayUnjudgeable(data);
         } else {
             displayAnalysisResults(data);
         }
@@ -679,6 +825,48 @@ function handleTextAnalysis(e) {
 function displayAnalysisResults(data) {
     // Show results in the modal for all devices
     displayAnalysisResultsDesktop(data);
+}
+
+/**
+ * State A: the server refused to judge because there was not enough readable
+ * text. Deliberately renders no category, no risk score and no probability
+ * bars -- there is no honest verdict to draw, so none is drawn.
+ */
+function displayUnjudgeable(data) {
+    const resultsContent = document.getElementById('resultsContent');
+    const letters = data.letter_count || 0;
+    const words = data.word_count || 0;
+    resultsContent.innerHTML = `
+        <div class="result-card card mb-3" style="border-color: var(--color-newsletter); border-width: 2px;">
+            <div class="card-body text-center">
+                <div class="mb-2" style="font-size: 3.5rem; color: var(--color-newsletter);">
+                    <i class="fas fa-circle-question"></i>
+                </div>
+                <h4 class="card-title fw-bold mb-1" style="color: var(--color-newsletter);">${escapeHtml(data.message || 'Not enough text to analyse')}</h4>
+                <p class="text-muted mb-0">${escapeHtml(data.detail || '')}</p>
+            </div>
+        </div>
+        <div class="card result-card">
+            <div class="card-body">
+                <h6 class="card-subtitle text-muted mb-2">Why we did not guess</h6>
+                <p class="mb-0 small text-muted">
+                    The model is trained on email-length text, so a paste this short sits
+                    outside anything it has seen. It still produces a number, but that
+                    number is not a judgement &mdash; on this input it called
+                    <code>$%^&amp;*()</code> <strong>malware</strong> with 93% confidence.
+                    Saying &ldquo;we don&rsquo;t know&rdquo; is more useful than a confident wrong answer.
+                </p>
+                <hr>
+                <p class="mb-0 small text-muted">
+                    Read: <strong>${letters}</strong> letter${letters === 1 ? '' : 's'} &middot;
+                    <strong>${words}</strong> word${words === 1 ? '' : 's'} &middot;
+                    needed more than 10 letters to be judged.
+                </p>
+            </div>
+        </div>
+    `;
+    document.getElementById('analysisResults').style.display = 'block';
+    document.getElementById('analysisPlaceholder').style.display = 'none';
 }
 
 function displayAnalysisResultsDesktop(data) {
@@ -777,6 +965,15 @@ function displayAnalysisResultsDesktop(data) {
                 </div>
             </div>
         </div>
+
+        ${data.note ? `
+        <!-- State B: the verdict stands, but the user is told how little text
+             produced it. This is a caveat, not a second verdict. -->
+        <div class="alert alert-info d-flex align-items-start mt-3 mb-0" role="status">
+            <i class="fas fa-circle-info me-2 mt-1"></i>
+            <div class="small">${escapeHtml(data.note)}</div>
+        </div>
+        ` : ''}
     `;
     
     // Show the results
@@ -934,10 +1131,130 @@ let analysisPollingInterval = null;
 let currentTaskId = null;
 let isRateLimited = false;
 
+let scanScopeModal = null;
+
+function openScanModal() {
+    const el = document.getElementById('scanScopeModal');
+    if (!el) return;
+    clearScanError();
+    syncScanOptions();
+    // Reuse Bootstrap's instance if it is already built, otherwise build once.
+    if (window.bootstrap && bootstrap.Modal) {
+        scanScopeModal = scanScopeModal || new bootstrap.Modal(el);
+        scanScopeModal.show();
+    } else {
+        // No Bootstrap on this page (should not happen, but a dead button is
+        // worse than a plain fallback).
+        el.classList.add('show');
+        el.style.display = 'block';
+        el.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('modal-open');
+    }
+}
+
+function closeScanModal() {
+    const el = document.getElementById('scanScopeModal');
+    if (!el) return;
+    if (scanScopeModal) {
+        scanScopeModal.hide();
+    } else {
+        el.classList.remove('show');
+        el.style.display = 'none';
+        el.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('modal-open');
+    }
+}
+
+function currentScanScope() {
+    const periodEl = document.querySelector('input[name="scanPeriod"]:checked');
+    const period = periodEl ? periodEl.value : '30d';
+    const custom = period === 'custom';
+    return {
+        period: period,
+        from_date: custom ? (document.getElementById('scanFrom').value || null) : null,
+        to_date: custom ? (document.getElementById('scanTo').value || null) : null
+    };
+}
+
+// Confirms the choice before the user commits, so a miscount is visible rather
+// than discovered in the results.
+function updateScanSummary() {
+    const scope = currentScanScope();
+    const labels = {
+        '7d': 'the last 7 days',
+        '30d': 'the last 30 days',
+        'month': 'this month'
+    };
+    let when;
+    if (scope.period === 'custom') {
+        when = (scope.from_date && scope.to_date)
+            ? `${scope.from_date} to ${scope.to_date}`
+            : 'a custom range';
+        text = `Scan every email from ${when}`;
+    } else {
+        when = labels[scope.period] || 'recent mail';
+        text = `Scan every email from ${when}`;
+    }
+
+    // Shown inside the modal, and mirrored on the card so the dashboard still
+    // reflects the last scope the user chose.
+    const inModal = document.getElementById('scanSummaryModal');
+    if (inModal) inModal.textContent = text;
+    const onCard = document.getElementById('scanSummary');
+    if (onCard) onCard.textContent = text;
+}
+
+// Reveals the two date inputs only for Custom, and validates them in the browser
+// as well as on the server, because a 400 after a click feels broken.
+function syncScanOptions() {
+    const period = document.querySelector('input[name="scanPeriod"]:checked');
+    const isCustom = period && period.value === 'custom';
+    document.getElementById('customRange').classList.toggle('d-none', !isCustom);
+    updateScanSummary();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('input[name="scanPeriod"]').forEach(function (el) {
+        el.addEventListener('change', syncScanOptions);
+    });
+    ['scanFrom', 'scanTo'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', updateScanSummary);
+    });
+    syncScanOptions();
+});
+
+function showScanError(msg) {
+    const box = document.getElementById('scanError');
+    if (!box) { alert(msg); return; }
+    box.textContent = msg;
+    box.classList.remove('d-none');
+}
+
+function clearScanError() {
+    const box = document.getElementById('scanError');
+    if (box) box.classList.add('d-none');
+}
+
 function startAsyncAnalysis() {
     const btn = document.getElementById('analyzeEmailsBtn');
-    
+
     if (btn.disabled || isRateLimited) return;
+
+    // Validate here so a bad range is caught before the request, and still
+    // validated server-side because this check is trivially bypassed.
+    const scope = currentScanScope();
+    clearScanError();
+    if (scope.period === 'custom') {
+        if (!scope.from_date || !scope.to_date) {
+            showScanError('Pick both a From and a To date for a custom range.');
+            return;
+        }
+        if (scope.from_date > scope.to_date) {
+            showScanError('The From date is after the To date.');
+            return;
+        }
+    }
 
     // Stale cooldown check from previous session (survives page refresh)
     const stored = localStorage.getItem('rateLimitCooldown');
@@ -950,23 +1267,32 @@ function startAsyncAnalysis() {
         localStorage.removeItem('rateLimitCooldown');
     }
 
-    // Disable button
+    // Disable both buttons: the card's and the modal's, because a double submit
+    // would start two scans and the rate limiter is only 5 per minute.
     btn.disabled = true;
     btn.innerHTML = '<span class="btn-content"><i class="fas fa-spinner fa-spin"></i> Starting...</span>';
-    
-    // Show loading modal
+    const confirmBtn = document.getElementById('scanConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<span class="btn-content"><i class="fas fa-spinner fa-spin"></i> Starting...</span>';
+    }
+
+    // Swap the scope modal for the progress modal, so the user watches the scan
+    // they just configured rather than a separate screen.
+    closeScanModal();
     showAnalysisModal();
-    
+
     // AbortController with 50-second timeout
     const controller = new AbortController();
     const fetchTimeout = setTimeout(() => controller.abort(), 50000);
-    
+
     // Start analysis via API
     fetch('/api/start_analysis', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
+        body: JSON.stringify(scope),
         signal: controller.signal
     })
     .then(response => {
@@ -988,7 +1314,7 @@ function startAsyncAnalysis() {
         const taskId = data.task_id;
         currentTaskId = taskId;  // Store for cancellation
         updateModalStatus(0, 'Analysis started. Waiting for progress...');
-        
+
         // Start polling for progress
         startProgressPolling(taskId);
     })
@@ -1004,8 +1330,13 @@ function startAsyncAnalysis() {
             updateModalStatus(0, `Rate limit reached. Please wait ${error.retryAfter}s...`, true);
             startRateLimitCountdown(error.retryAfter);
         } else {
+            // A rejected scope is a form problem, not an analysis failure, so it
+            // belongs in the scope modal the user can correct, not in a progress
+            // modal they can only read.
             updateModalStatus(0, 'Failed to start analysis: ' + error.message, true);
             resetAnalysisButton();
+            openScanModal();
+            showScanError(error.message);
         }
     });
 }
@@ -1208,6 +1539,13 @@ function resetAnalysisButton() {
     if (btn) {
         btn.disabled = false;
         btn.innerHTML = '<span class="btn-content"><i class="fas fa-play"></i> Start Analysis</span>';
+    }
+    // The scope modal has its own submit button. Without this it stayed disabled
+    // after any failure, so retrying from the modal was impossible.
+    const confirmBtn = document.getElementById('scanConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = '<span class="btn-content"><i class="fas fa-play"></i> Start Analysis</span>';
     }
 }
 

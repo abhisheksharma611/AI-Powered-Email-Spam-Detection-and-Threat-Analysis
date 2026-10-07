@@ -248,6 +248,14 @@
                         <span class="badge bg-primary fs-6 px-3 py-1">
                             <i class="fas fa-list"></i> Last Scan
                         </span>
+                        {# Sits beside the Last Scan badge, not beside the clock:
+                           the window is a property of the scan, and this is where
+                           the scan is already named. #}
+                        {% if analytics.scope_label %}
+                        <span class="badge bg-info fs-6 px-3 py-1">
+                            for {{ analytics.scope_label }}
+                        </span>
+                        {% endif %}
                     </div>
                     <p class="analytics-subtitle">
                         <i class="fas fa-shield-alt"></i>
@@ -407,7 +415,11 @@
             <div class="card">
                 <div class="card-header card-header-theme d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-exclamation-circle"></i> Top 5 Highest Urgency Emails</h5>
-                    <span class="badge bg-light text-dark fs-6 px-3 py-1"><i class="fas fa-clock"></i> Last 7 Days</span>
+                    {# The "Last 7 Days" badge here was a lie AND was removed on
+                       request. It sat above a list built from the whole scan with
+                       no date filter, so it showed Aug and Sep rows under a
+                       7-day label. The query is now scoped to 7 days so the data
+                       is honest; the header alone says what the card is. #}
                 </div>
                 <div class="card-body">
                     {% if analytics.top_5_high_urgency %}
