@@ -42,11 +42,32 @@ class Email(db.Model):
     risk_score = db.Column(db.Integer, default=0)
     risk_level = db.Column(db.String(20))
     confidence = db.Column(db.Float, default=0.0)
-    
+
+    # Gmail labels as they were when this row was last scanned, comma-joined.
+    #
+    # Nullable and additive, so existing rows are fine and no data migration is
+    # required. This exists because the labels used to be fetched, held in a
+    # dict inside get_recent_emails and then dropped on the floor -- which is
+    # exactly how deleted mail kept coming back with nothing to show for it.
+    # Keeping them makes "why is this row here" answerable without Gmail.
+    label_ids = db.Column(db.String(255), nullable=True)
+
+    # Which scan produced this row.
+    #
+    # Without this the results page could not tell the mail from the scan the
+    # user just ran from mail left over from earlier scans: /results simply did
+    # `Email.query.filter_by(user_email=...)` and showed everything, so choosing
+    # "custom, 10 emails" still displayed 50 rows. The user asked for a scope and
+    # had no way to see it.
+    #
+    # Nullable and additive: rows written before this column existed belong to no
+    # scan and still show under "All scans".
+    scan_id = db.Column(db.String(32), nullable=True, index=True)
+
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     def __repr__(self):
         return f'<Email {self.id} - {self.category} - Urgency: {self.urgency_level}>'
     
@@ -140,6 +161,75 @@ class OAuthStore(db.Model):
     __tablename__ = 'oauth_store'
     user_email = db.Column(db.String(255), primary_key=True)
     refresh_token = db.Column(db.String(512))
+
+
+class ScanSession(db.Model):
+    """The most recent scan per user, kept OUTSIDE the Flask session.
+
+    current_scan_id used to live only in session['current_scan_id'], so closing
+    the browser or opening a new tab threw it away while /results and
+    /last-scan both refused to render without it -- "No scan has been run in
+    this session" -- even with the emails sitting in the database. The session
+    copy stays as the fast path; this table is the durable fallback.
+    """
+    __tablename__ = 'scan_sessions'
+
+    user_email = db.Column(db.String(255), primary_key=True)
+    scan_id = db.Column(db.String(32), nullable=False, index=True)
+    scope_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        import json
+        try:
+            scope = json.loads(self.scope_json) if self.scope_json else None
+        except (ValueError, TypeError):
+            scope = None
+        return {'user_email': self.user_email, 'scan_id': self.scan_id,
+                'scope': scope,
+                'updated_at': self.updated_at.isoformat() if self.updated_at else None}
+
+    @staticmethod
+    def remember(user_email, scan_id, scope=None):
+        """Upsert the pointer. Returns the row, or None if the write failed --
+        a caller must not treat that as fatal, because the session copy may
+        still cover the current request."""
+        import json
+        try:
+            row = ScanSession.query.get(user_email)
+            if row is None:
+                row = ScanSession(user_email=user_email)
+                db.session.add(row)
+            row.scan_id = scan_id
+            row.scope_json = json.dumps(scope) if scope else None
+            db.session.commit()
+            return row
+        except Exception:
+            db.session.rollback()
+            return None
+
+    @staticmethod
+    def recall(user_email):
+        """The remembered scan, or None. Also drops a pointer whose scan has no
+        rows, so a cleared or re-scanned database cannot resurrect a dead id."""
+        if not user_email:
+            return None
+        try:
+            row = ScanSession.query.get(user_email)
+        except Exception:
+            db.session.rollback()
+            return None
+        if row is None or not row.scan_id:
+            return None
+        try:
+            exists = Email.query.filter_by(user_email=user_email,
+                                           scan_id=row.scan_id).first()
+        except Exception:
+            db.session.rollback()
+            return None
+        return row if exists else None
 
 
 class LearnedKeyword(db.Model):
