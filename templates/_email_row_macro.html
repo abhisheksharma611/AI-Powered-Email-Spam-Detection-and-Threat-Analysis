@@ -1,0 +1,260 @@
+{# The single definition of an email table row.
+
+   Deliberately in its own template that extends NOTHING. It used to live
+   inside results.html, but results.html extends base.html and importing a
+   macro from an extending template executes the parent, which needs
+   `current_user` from Flask-Login -- so the AJAX fragment endpoint returned
+   500 with UndefinedError. A macro-only template imports cleanly, and both
+   the full page and _email_rows_fragment.html use this one definition. #}
+{# ONE row renderer, used by the full page AND by the AJAX filter
+   endpoint. An earlier client-side copy of this markup drifted from the
+   server's: it printed the raw category slug and an unrounded confidence. #}
+{% macro email_row(email) %}
+                                <tr class="email-row align-middle" data-type="{{ 'threat' if email.is_spam else 'safe' }}" data-category="{{ email.category }}" data-urgency="{{ email.urgency_score|default(0) }}" data-date="{{ email.sortable_date }}">
+                            <td data-label="Subject">
+                                <div class="email-subject-cell">
+                                    <div class="d-flex align-items-start">
+                                        <div class="category-emoji me-2 fs-5">
+                                            {% if email.category == 'legitimate' %}
+                                                <i class="fas fa-check-circle category-legitimate"></i>
+                                            {% elif email.category == 'promotion' %}
+                                                <i class="fas fa-bullhorn category-promotion"></i>
+                                            {% elif email.category == 'phishing' %}
+                                                <i class="fas fa-skull-crossbones category-phishing"></i>
+                                            {% elif email.category == 'malware' %}
+                                                <i class="fas fa-virus category-malware"></i>
+                                            {% elif email.category == 'newsletter' %}
+                                                <i class="fas fa-newspaper category-newsletter"></i>
+                                            {% elif email.category == 'spam' %}
+                                                <i class="fas fa-exclamation-triangle category-spam"></i>
+                                            {% else %}
+                                                <i class="fas fa-tag text-secondary"></i>
+                                            {% endif %}
+                                        </div>
+                                        <div class="flex-grow-1">
+                                            <a href="{{ url_for('view_email', email_id=email.id) }}" class="text-decoration-none email-subject-link" data-email-id="{{ email.id }}">
+                                                <strong class="d-block text-truncate text-primary" title="{{ email.subject }}">
+                                                    {{ email.subject[:30] }}{% if email.subject|length > 30 %}...{% endif %}
+                                                </strong>
+                                            </a>
+                                            {% if email.snippet %}
+                                            <small class="text-active d-block mt-1 text-truncate">
+                                                {{ email.snippet[:30] }}{% if email.snippet|length > 30 %}...{% endif %}
+                                            </small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                                    <td data-label="Sender">
+                                        <div class="cell-align">
+                                            <span class="d-inline-block text-truncate" style="max-width: 185px;" title="{{ email.sender }}">
+                                                {{ email.sender }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td data-label="Date">
+                                        <div class="cell-align">
+                                            <small class="text-active utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</small>
+                                        </div>
+                                    </td>
+                                    <td data-label="Category">
+                                        <div class="cell-align">
+                                            {% set display_name = {
+                                                'legitimate': 'Not Spam',
+                                                'promotion': 'Promotion',
+                                                'phishing': 'Phishing',
+                                                'malware': 'Malware',
+                                                'newsletter': 'Newsletter',
+                                                'spam': 'Spam'
+                                            } %}
+                                            {% set category_colors = {
+                                                'legitimate': 'success',
+                                                'promotion': 'warning',
+                                                'phishing': 'phishing',
+                                                'malware': 'purple',
+                                                'newsletter': 'newsletter',
+                                                'spam': 'danger'
+                                            } %}
+                                             {% set category_icons = {
+                                                 'legitimate': 'check-circle',
+                                                 'promotion': 'bullhorn',
+                                                 'phishing': 'skull-crossbones',
+                                                 'malware': 'virus',
+                                                 'newsletter': 'newspaper',
+                                                 'spam': 'exclamation-triangle'
+                                             } %}
+                                              <span class="badge bg-{{ category_colors.get(email.category, 'secondary') }} d-flex align-items-center justify-content-center{{ ' text-dark' if email.category == 'promotion' else '' }}">
+                                                 <i class="fas fa-{{ category_icons.get(email.category, 'tag') }} me-1"></i> {{ display_name.get(email.category, email.category.title()) }}
+                                             </span>
+                                        </div>
+                                    </td>
+                                    <td data-label="Risk">
+                                        <div class="cell-align">
+                                            {% set risk_colors = {
+                                                'High': 'danger',
+                                                'Medium': 'warning',
+                                                'Low': 'success'
+                                            } %}
+                                            {% set risk_icons = {
+                                                'High': 'exclamation-triangle',
+                                                'Medium': 'exclamation-circle',
+                                                'Low': 'check-circle'
+                                            } %}
+                                            {% set risk_emojis = {
+                                                'High': '🔴',
+                                                'Medium': '⚠️',
+                                                'Low': '🟢'
+                                            } %}
+                                            <span class="badge bg-{{ risk_colors.get(email.risk_level, 'secondary') }} d-flex align-items-center justify-content-center{{ ' text-dark' if email.risk_level == 'Medium' else '' }}">
+                                                <span class="me-1">{{ risk_emojis.get(email.risk_level, '❓') }}</span>
+                                                {{ email.risk_level }}
+                                            </span>
+                                            <small class="text-active d-block mt-1 text-center">{{ email.risk_score }}/100</small>
+                                        </div>
+                                    </td>
+                                    <td data-label="Urgency">
+                                        <div class="cell-align">
+                                            {% set urgency_colors = {
+                                                'High': 'danger',
+                                                'Medium': 'warning text-dark',
+                                                'Low': 'success'
+                                            } %}
+                                            {% set urgency_emojis = {
+                                                'High': '🔥',
+                                                'Medium': '⚡',
+                                                'Low': '📩'
+                                            } %}
+                                            <span class="badge bg-{{ urgency_colors.get(email.urgency_level, 'secondary') }} d-flex align-items-center justify-content-center">
+                                                <span class="me-1">{{ urgency_emojis.get(email.urgency_level, '📧') }}</span>
+                                                {{ email.urgency_level|default('Low') }}
+                                            </span>
+                                            <small class="text-active d-block mt-1 text-center">{{ email.urgency_score|default(0) }}/100</small>
+                                        </div>
+                                    </td>
+                                    <td data-label="Confidence">
+                                        <div class="cell-align confidence-cell">
+                                            <div class="confidence-content">
+                                                <small class="fw-bold">{{ "%.0f"|format(email.confidence) }}%</small>
+                                                {% if email.confidence > 80 %}
+                                                    <i class="fas fa-check-circle text-success"></i>
+                                                {% elif email.confidence > 60 %}
+                                                    <i class="fas fa-exclamation-circle text-warning"></i>
+                                                {% else %}
+                                                    <i class="fas fa-question-circle text-danger"></i>
+                                                {% endif %}
+                                            </div>
+                                            <div class="progress progress-sm">
+                                                <div class="progress-bar progress-bar-striped 
+                                                    {% if email.confidence >= 80 %}bg-success
+                                                    {% elif email.confidence >= 50 %}bg-warning
+                                                    {% else %}bg-danger{% endif %}"
+                                                    style="width: {{ email.confidence }}%" 
+                                                    role="progressbar">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endmacro %}
+
+{# Same reasoning as email_row: the mobile card. The AJAX filter swap has to
+   update the card grid too, or on a narrow viewport the cards keep showing
+   the unfiltered list while the table beside them shows the filter. #}
+{% macro email_card(email) %}
+                        <a href="{{ url_for('view_email', email_id=email.id) }}" class="text-decoration-none">
+                        <div class="email-card" data-type="{{ 'threat' if email.is_spam else 'safe' }}" data-category="{{ email.category }}" data-urgency="{{ email.urgency_score|default(0) }}" data-date="{{ email.sortable_date }}">
+                            <!-- Row 1: Subject -->
+                            <div class="email-card-subject-row">
+                                <small class="text-active label-inline">📧 Email Subject:</small>
+                                <span class="email-card-subject-text text-primary">{{ email.subject[:100] }}{% if email.subject|length > 100 %}...{% endif %}</span>
+                            </div>
+                            <!-- Row 2: Email Snippet/Preview -->
+                            {% if email.snippet %}
+                            <div class="email-card-snippet">
+                                <small class="text-active label-inline">📝 Body:</small>
+                                {{ email.snippet[:150] }}{% if email.snippet|length > 150 %}...{% endif %}
+                            </div>
+                            {% endif %}
+                            <!-- Row 3: Sender + Date -->
+                            <div class="email-card-sender-row">
+                                <div>
+                                    <small class="text-active label-inline">👤 Sender:</small>
+                                    <span class="email-card-sender" title="{{ email.sender }}">{{ email.sender }}</span>
+                                </div>
+                                <div class="text-end">
+                                    <small class="text-active label-inline">📅 Date:</small>
+                                    <span class="email-card-date utc-date" data-utc="{{ email.date_utc }}">{{ email.date }}</span>
+                                </div>
+                            </div>
+                            <!-- Row 4: Badges -->
+                            <div class="email-card-badges">
+                                <small class="text-active label-inline">🏷️ Category:</small>
+                                {% set display_name = {
+                                    'legitimate': 'Not Spam',
+                                    'promotion': 'Promotion',
+                                    'phishing': 'Phishing',
+                                    'malware': 'Malware',
+                                    'newsletter': 'Newsletter',
+                                    'spam': 'Spam'
+                                } %}
+                                {% set category_colors = {
+                                    'legitimate': 'success',
+                                    'promotion': 'warning',
+                                    'phishing': 'phishing',
+                                    'malware': 'purple',
+                                    'newsletter': 'newsletter',
+                                    'spam': 'danger'
+                                } %}
+                                {% set risk_colors = {
+                                    'High': 'danger',
+                                    'Medium': 'warning',
+                                    'Low': 'success'
+                                } %}
+                                {% set risk_emojis = {
+                                    'High': '🔴',
+                                    'Medium': '⚠️',
+                                    'Low': '🟢'
+                                } %}
+                                {% set urgency_colors = {
+                                    'High': 'danger',
+                                    'Medium': 'warning text-dark',
+                                    'Low': 'success'
+                                } %}
+                                {% set urgency_emojis = {
+                                    'High': '🔥',
+                                    'Medium': '⚡',
+                                    'Low': '📩'
+                                } %}
+                                <span class="badge bg-{{ category_colors.get(email.category, 'secondary') }} badge-sm{{ ' text-dark' if email.category == 'promotion' else '' }}">{{ display_name.get(email.category, email.category.title()[:4]) }}</span>
+                                <small class="text-active label-inline ms-2">⚠️ Risk:</small>
+                                <span class="badge bg-{{ risk_colors.get(email.risk_level, 'secondary') }} badge-sm{{ ' text-dark' if email.risk_level == 'Medium' else '' }}">{{ risk_emojis.get(email.risk_level, '') }} {{ (email.risk_level or '')[:6] }}</span>
+                                <small class="text-active label-inline">🔥 Urgency:</small>
+                                <span class="badge bg-{{ urgency_colors.get(email.urgency_level, 'secondary') }} badge-sm">{{ urgency_emojis.get(email.urgency_level, '📧') }} {{ (email.urgency_level or 'Low')[:6] }}</span>
+                            </div>
+                            <!-- Row 5: Confidence -->
+                            <div class="email-card-confidence">
+                                <div class="confidence-label-row">
+                                    <small class="text-active">✅ Confidence:</small>
+                                    <span class="confidence-text fw-bold">{{ "%.0f"|format(email.confidence) }}%
+                                    {% if email.confidence >= 80 %}
+                                        <i class="fas fa-check-circle text-success"></i>
+                                    {% elif email.confidence >= 50 %}
+                                        <i class="fas fa-exclamation-circle text-warning"></i>
+                                    {% else %}
+                                        <i class="fas fa-question-circle text-danger"></i>
+                                    {% endif %}
+                                    </span>
+                                </div>
+                                <div class="progress confidence-progress">
+                                    <div class="progress-bar 
+                                        {% if email.confidence > 80 %}bg-success
+                                        {% elif email.confidence > 60 %}bg-warning
+                                        {% else %}bg-danger{% endif %}" 
+                                        style="width: {{ email.confidence }}%">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        </a>
+                        {% endmacro %}
