@@ -7,11 +7,15 @@
 ## Goal
 
 The dashboard's "Test Text" button and its modal should classify pasted text using
-Laya (`laya:en` via Ollaya on port 11435) instead of the RoBERTa + ensemble stack.
+**Laya only** (`laya:en` via Ollaya on port 11435). No RoBERTa, no ensemble, no
+fallback, no toggle.
 
 This is a **local experiment** to see how Laya behaves on this corpus. It is not a
 production swap. The Start Analysis path, the inbox scan, the results pages and the
-database keep using RoBERTa + ensemble unchanged.
+database keep using RoBERTa + ensemble unchanged, and `/api/analyze_text` is left in
+the codebase untouched.
+
+If the experiment does not work, revert to commit `4d5cc8d`. See **Reverting**.
 
 ## Non-goals
 
@@ -60,7 +64,7 @@ labelled experiment**. The UI must not present Laya as authoritative.
 Browser (dashboard.html)
   "Test Text" button -> #textAnalysisModal  (unchanged)
   textarea #analysisText                    (unchanged)
-  submit -> handleTextAnalysis               (modified: URL + label)
+  submit -> handleTextAnalysis               (modified: one URL changed)
       |
       | POST /api/laya_text
       v
@@ -81,6 +85,11 @@ displayAnalysisResultsDesktop(data)         (unchanged, reused as-is)
 
 The results renderer is reused unchanged. Laya is shaped to match the payload the
 renderer already expects, rather than the renderer being forked.
+
+**The modal runs Laya and nothing else.** There is no engine toggle, no second button
+and no dropdown. `/api/analyze_text` and the RoBERTa path are left in the codebase and
+left untouched — the modal simply stops calling them. If the experiment fails, the
+revert is a one-line change back to `/api/analyze_text`.
 
 ## Components
 
@@ -153,18 +162,33 @@ letters, so it cannot affect real traffic.
 
 ### 3. `templates/dashboard.html`
 
-- A second submit button `#layaBtn` beside `#analyzeBtn` (around line 360), styled
-  `btn-outline-success` to mark it as the experimental path.
-- `handleTextAnalysis` reads which button was pressed and picks the URL. One shared
-  textarea, one shared renderer, two endpoints.
-- The results header states which engine produced the verdict.
-- `resetTextAnalysisModal` clears the new button's state too.
-- No health probe on page load. The button is never disabled, because a greyed-out
-  button with no explanation is worse than a click that returns a clear message. The
-  server-down case surfaces as a 503 in the modal instead.
+The existing `#analyzeBtn` (line 360) stays the only button. The single change in
+`handleTextAnalysis` is the URL it posts to: `/api/analyze_text` becomes
+`/api/laya_text`.
+
+- The modal header (line 342) is retitled from "AI Text Analysis" to name Laya, so
+  the user knows which engine answered. A wrong confident verdict is worse than an
+  honest one, and that applies to attribution too.
+- The results header (line 383) also names the engine, since the modal can be left
+  open across a re-render.
+- No new button, no toggle, no dropdown. `resetTextAnalysisModal` needs no change —
+  there is no second control to reset.
 
 The modal already has a two-column layout, `col-md-5` for input and `col-md-7` for
-results, so the extra button fits without a layout change.
+results, so nothing about the layout changes.
+
+## Reverting
+
+The experiment is isolated to four files. Reverting is:
+
+```
+git checkout 4d5cc8d -- app.py templates/dashboard.html .env.example
+rm utils/laya_client.py
+```
+
+`4d5cc8d` is the last commit before this work and no `.py` file has changed since, so
+that restores the RoBERTa modal exactly. `/api/analyze_text` was never modified — only
+the caller was — so it comes back working with no other edit.
 
 ## State coverage
 
@@ -175,6 +199,9 @@ results, so the extra button fits without a layout change.
 | Laya returns a bad payload | Same 503. Logged at ERROR with the payload. |
 | Text too short | `judgeable: false`, reuses the existing `displayUnjudgeable` path. |
 | Warm request | ~50 ms, feels instant. |
+
+No RoBERTa fallback anywhere. If Laya is down the modal says so; it does not quietly
+answer with the old model.
 
 ## Testing
 
@@ -202,6 +229,8 @@ results, so the extra button fits without a layout change.
 | File | Change |
 |---|---|
 | `utils/laya_client.py` | new — HTTP client |
-| `app.py` | import + `POST /api/laya_text` after line 2003 |
-| `templates/dashboard.html` | second button, branch in `handleTextAnalysis`, engine label |
+| `app.py` | import + `POST /api/laya_text` after line 2003. `/api/analyze_text` untouched. |
+| `templates/dashboard.html` | one URL in `handleTextAnalysis`, two title/label edits |
 | `.env.example` | five `LAYA_*` lines, documented as optional |
+
+Four files. Nothing else is touched.
