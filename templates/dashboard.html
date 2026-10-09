@@ -339,7 +339,7 @@
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title">
-                    <i class="fas fa-file-alt"></i> AI Text Analysis
+                    <i class="fas fa-file-alt"></i> Text Analysis <span class="badge bg-success ms-2">Laya</span>
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
@@ -380,7 +380,7 @@
                     <div class="col-md-7">
                         <div id="analysisResults" style="display: none;">
                             <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="mb-0">Analysis Results:</h6>
+                                <h6 class="mb-0">Analysis Results <span class="badge bg-success">Laya</span></h6>
                                 <button type="button" class="btn btn-outline-primary btn-sm" id="analyzeAgainBtn">
                                     <i class="fas fa-redo"></i> Analyze Again
                                 </button>
@@ -773,7 +773,10 @@ function handleTextAnalysis(e) {
     const controller = new AbortController();
     const fetchTimeout = setTimeout(() => controller.abort(), 25000); // 25 second timeout
     
-    fetch('/api/analyze_text', {
+    // EXPERIMENT: this modal is Laya-only. It deliberately does NOT call
+    // /api/analyze_text, which still serves RoBERTa + ensemble for Start
+    // Analysis and any direct API use. Revert = change this URL back.
+    fetch('/api/laya_text', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',

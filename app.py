@@ -20,7 +20,9 @@ from config import config
 from utils.auth import init_oauth
 from utils.gmail_client import GmailClient, prepare_for_model, GmailFetchError
 from utils.ai_explanation import generate_ai_explanation
+from utils.laya_client import analyze_email as laya_analyze
 from models.predictor import Predictor
+from models.predictor import BASE_RISKS
 from models.email_model import db, Email, SenderReputation, OAuthStore, ScanSession
 from utils.helpers import (
     calculate_urgency, learn_keywords_from_email, apply_adaptive_keyword_boost,
@@ -2001,6 +2003,112 @@ def analyze_text():
         return jsonify(result)
     except Exception:
         return jsonify({'error': 'Analysis failed'}), 500
+
+
+# ── EXPERIMENT: Laya-only Test Text ──────────────────────────────────────
+# The dashboard Test Text modal posts here instead of /api/analyze_text, so
+# the modal measures Laya on its own. RoBERTa + ensemble still serve
+# /api/analyze_text, Start Analysis and the inbox scan, untouched.
+#
+# There is deliberately NO fallback to /api/analyze_text when Laya is down.
+# The card is labelled Laya; answering it with RoBERTa would be a false
+# attribution, and this experiment exists precisely to see Laya's real
+# behaviour rather than a blend of it with something else. A 503 is the
+# honest answer.
+#
+# Revert point: commit 4d5cc8d. Deleting this route, the import above, and
+# utils/laya_client.py, and pointing the modal back at /api/analyze_text,
+# restores the previous behaviour exactly.
+@app.route('/api/laya_text', methods=['POST'])
+@login_required
+@rate_limit(max_req=10, window=60)
+def laya_text():
+    if not request.is_json:
+        return jsonify({'error': 'Content-Type must be application/json'}), 415
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Invalid JSON data'}), 400
+    text = (data.get('text', '') or '').strip()
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+    if len(text) > MAX_INPUT_LENGTH:
+        return jsonify({'error': f'Text too long. Maximum {MAX_INPUT_LENGTH} characters.'}), 400
+
+    # Same guard as /api/analyze_text, and for the same reason. Laya has not
+    # been measured against the symbol-only inputs that made RoBERTa call
+    # '$%^&*()' malware at 93%, but a decision model handed no readable text
+    # has nothing to score on, so the guard stands on its own logic.
+    letter_count = sum(1 for ch in text if ch.isalpha())
+    word_count = len(text.split())
+
+    if letter_count <= MIN_LETTERS_TO_JUDGE:
+        return jsonify({
+            'judgeable': False,
+            'letter_count': letter_count,
+            'word_count': word_count,
+            'message': 'Not enough text to analyse',
+            'detail': (
+                'That was %d letter%s and %d word%s. Paste a few sentences '
+                'of the email and we will check it.'
+                % (letter_count, '' if letter_count == 1 else 's',
+                   word_count, '' if word_count == 1 else 's')
+            ),
+        })
+
+    start = datetime.now()
+    result = laya_analyze(body=text)
+
+    if result is None:
+        # The client already logged the cause. Do not leak the internal URL
+        # into the response, but do name the model so the user is not left
+        # wondering why the other button still works.
+        return jsonify({
+            'error': 'Laya is not available right now.',
+            'detail': 'Start Ollaya on port 11435 and try again.',
+        }), 503
+
+    category = result['category']
+    probs = result['category_probabilities']
+    confidence = result['category_confidence']
+
+    # Display metadata comes from the existing predictor tables so there is
+    # one source of truth for icons, colours and descriptions. That is a
+    # lookup, not inference -- no model is loaded to produce it, and the
+    # RoBERTa artefacts are not consulted for the verdict.
+    category_info = predictor.get_category_info(category)
+
+    # Same arithmetic as Predictor._calc_risk, so Laya's verdict renders with
+    # the identical 0-100 scale and tier thresholds the rest of the app uses.
+    base_risk = BASE_RISKS.get(category, 40)
+    risk_score = base_risk * confidence
+    if confidence < 0.25:
+        risk_score *= 0.5
+    risk_score = min(max(int(risk_score), 0), 100)
+    risk_level = predictor.get_risk_level(risk_score, category)
+
+    note = None
+    if letter_count <= SHORT_INPUT_LETTERS:
+        note = ('Only %d word%s and %d letters. That is a very short piece '
+                'of text, so treat this result with some care.'
+                % (word_count, '' if word_count == 1 else 's', letter_count))
+
+    return jsonify({
+        'judgeable': True,
+        'engine': 'laya',
+        'letter_count': letter_count,
+        'word_count': word_count,
+        'note': note,
+        'category': category,
+        'category_info': category_info,
+        'is_spam': category != 'legitimate',
+        'risk_score': risk_score,
+        'risk_level': risk_level,
+        'confidence': confidence * 100,
+        'probabilities': {k: v * 100 for k, v in probs.items()},
+        'spam_probability': confidence * 100 if category != 'legitimate' else max(0, 100 - confidence * 100),
+        'analysis_time': round((datetime.now() - start).total_seconds(), 2),
+        'laya_latency_ms': result['latency_ms'],
+    })
 
 
 @app.route('/bulk_analyze', methods=['GET', 'POST'])
