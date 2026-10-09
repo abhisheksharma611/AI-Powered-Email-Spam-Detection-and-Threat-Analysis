@@ -4,8 +4,19 @@ import torch
 import os
 import logging
 from scipy.sparse import hstack
+from dotenv import load_dotenv
 
 from models.utils.preprocessing import preprocess_text, extract_engineered_features
+
+# PREDICTOR_BACKEND is read from the environment at import time, so the .env
+# file has to be loaded by THIS module. Relying on config.py to have done it
+# first is a trap: app.py imports config at line 19 and this module at line 24,
+# so it happens to work there, but every standalone entry point (evaluate.py,
+# run_local.py, `python -c "from models.predictor import Predictor"`) imports
+# this module WITHOUT config, never reads .env, and silently falls back to
+# roberta. That is exactly how a machine can have PREDICTOR_BACKEND=laya in
+# .env and still boot with RoBERTa + ensemble loaded.
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
