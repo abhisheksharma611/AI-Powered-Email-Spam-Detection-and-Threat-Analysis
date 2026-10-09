@@ -6,7 +6,6 @@ import logging
 from scipy.sparse import hstack
 
 from models.utils.preprocessing import preprocess_text, extract_engineered_features
-from models.roberta_model import get_roberta_model
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +20,42 @@ BASE_RISKS = {
     'malware': 85
 }
 
+# ── Backend switch (EXPERIMENT) ────────────────────────────────────────────
+#
+# 'roberta' (default) is the original behaviour: fine-tuned RoBERTa 0.90 +
+# sklearn ensemble 0.10, both loaded from models/. Untouched.
+#
+# 'laya' serves every prediction from laya:en over Ollaya on port 11435 and
+# does NOT load the 498 MB checkpoint or the 111 MB ensemble. The artefacts
+# stay on disk either way; only the loading is skipped, so switching back is
+# a one-line .env change with no retraining and no data loss.
+#
+# Set PREDICTOR_BACKEND=laya in .env. Defaults to 'roberta' when unset.
+PREDICTOR_BACKEND = os.environ.get('PREDICTOR_BACKEND', 'roberta').strip().lower()
+
+
+def risk_from_confidence(category, confidence):
+    """The 0-100 risk score, from a category and a top-1 probability.
+
+    Deliberately shared: the Laya branch of Predictor and POST /api/laya_text
+    must produce the same number for the same verdict, or the same email would
+    carry two different risk scores depending on which route classified it.
+    """
+    base_risk = BASE_RISKS.get(category, 40)
+    risk_score = base_risk * confidence
+    if confidence < 0.25:
+        risk_score *= 0.5
+    return min(max(int(risk_score), 0), 100)
+
 
 class Predictor:
+    # Class-level default, not just an __init__ assignment. Tests construct a
+    # bare instance via Predictor.__new__(Predictor) to exercise the fusion
+    # fallbacks without loading any weights; an instance attribute set only in
+    # __init__ would be absent there and every predict_* call would raise
+    # AttributeError. A class attribute is inherited by that instance too.
+    backend = PREDICTOR_BACKEND if PREDICTOR_BACKEND in ('roberta', 'laya') else 'roberta'
+
     def __init__(self):
         self.roberta = None
         self.ensemble_model = None
@@ -30,10 +63,31 @@ class Predictor:
         self.encoder = None
         self._is_trained = False
         self.categories = CATEGORIES
+        self.backend = self.backend  # instance value shadows the class default
         self._load_models()
 
     def _load_models(self):
+        # ── Laya backend: no local artefacts are touched at all ──────────────
+        # The 498 MB RoBERTa checkpoint and the 111 MB ensemble are deliberately
+        # NOT opened. They stay on disk untouched, so PREDICTOR_BACKEND=roberta
+        # restores the original stack with no retraining.
+        if self.backend == 'laya':
+            from utils.laya_client import available as laya_available
+            reachable = laya_available()
+            self._is_trained = reachable
+            if reachable:
+                logger.info("Predictor backend: LAYA (RoBERTa + ensemble NOT loaded)")
+            else:
+                logger.error(
+                    "Predictor backend: LAYA but no Ollaya server at %s. "
+                    "Predictions will fail until `ollaya serve` is running.",
+                    os.environ.get('LAYA_BASE_URL', 'http://localhost:11435'),
+                )
+            return
+
         # Load RoBERTa
+        from models.roberta_model import get_roberta_model
+
         roberta_path = 'models/best_roberta_model.pth'
         if os.path.exists(roberta_path):
             try:
@@ -75,6 +129,23 @@ class Predictor:
     def is_trained(self):
         return self._is_trained
 
+    def _get_laya_probs(self, text):
+        """Six-category probability dict from Laya, or None if it is unavailable.
+
+        Returns the same {category: prob} shape as _get_roberta_probs so the
+        fusion and reporting code below is shared between backends.
+        """
+        try:
+            from utils.laya_client import analyze_email as laya_analyze
+        except Exception as e:
+            logger.error(f"Laya client import failed: {e}")
+            return None
+
+        result = laya_analyze(body=text)
+        if result is None:
+            return None
+        return result['category_probabilities']
+
     def _get_roberta_probs(self, text):
         if self.roberta is None or not self.roberta.is_loaded:
             return None
@@ -106,6 +177,35 @@ class Predictor:
         except Exception as e:
             logger.warning(f"Ensemble proba failed: {e}")
             return None
+
+    def _get_laya_probs_batch(self, texts):
+        """Laya over a list, one HTTP request per message.
+
+        Laya has no batch mode: putting several emails in one `state` returns
+        HTTP 422. So this is a loop, which is the entire reason Laya is not
+        suitable for the inbox scan at scale. Measured ~66ms per message, so a
+        32-message slice is roughly 2.1s.
+        """
+        out = []
+        failures = 0
+        for t in texts:
+            probs = self._get_laya_probs(t)
+            if probs is None:
+                failures += 1
+                out.append(None)
+            else:
+                out.append(probs)
+
+        if failures:
+            # Match the ensemble branch's discipline: a failure here means the
+            # verdict for that message is a guess, not a measurement.
+            logger.error(
+                "Laya failed on %d of %d messages. Those rows fall back to a "
+                "uniform 1/6 distribution, which is a COIN FLIP across six "
+                "categories, not a classification.",
+                failures, len(texts),
+            )
+        return out
 
     def _get_roberta_probs_batch(self, texts):
         if self.roberta is None or not self.roberta.is_loaded:
@@ -178,6 +278,33 @@ class Predictor:
             return None
 
     def predict_batch(self, texts):
+        # ── Laya backend ───────────────────────────────────────────────────
+        # One request per message, no fusion. `source` records which engine
+        # answered so a stored row can never be silently misattributed.
+        if self.backend == 'laya':
+            laya_list = self._get_laya_probs_batch(texts)
+            results = []
+            for i in range(len(texts)):
+                probs = laya_list[i] if laya_list else None
+                if probs is None:
+                    probs = {cat: 1.0 / len(CATEGORIES) for cat in CATEGORIES}
+                    source = 'uniform'
+                else:
+                    source = 'laya'
+                category = max(probs, key=probs.get)
+                confidence = probs[category]
+                risk_score = risk_from_confidence(category, confidence)
+                results.append({
+                    'category': category,
+                    'probabilities': probs,
+                    'risk_score': risk_score,
+                    'risk_level': self.get_risk_level(risk_score, category),
+                    'is_spam': category != 'legitimate',
+                    'confidence': confidence * 100,
+                    'model_source': source,
+                })
+            return results
+
         roberta_probs_list = self._get_roberta_probs_batch(texts)
         ensemble_probs_list = self._get_ensemble_probs_batch(texts)
 
@@ -221,6 +348,26 @@ class Predictor:
         return results
 
     def predict_single(self, text):
+        if self.backend == 'laya':
+            probs = self._get_laya_probs(text)
+            if probs is None:
+                probs = {cat: 1.0 / len(CATEGORIES) for cat in CATEGORIES}
+                source = 'uniform'
+            else:
+                source = 'laya'
+            category = max(probs, key=probs.get)
+            confidence = probs[category]
+            risk_score = risk_from_confidence(category, confidence)
+            return {
+                'category': category,
+                'probabilities': probs,
+                'risk_score': risk_score,
+                'risk_level': self.get_risk_level(risk_score, category),
+                'is_spam': category != 'legitimate',
+                'confidence': confidence * 100,
+                'model_source': source,
+            }
+
         roberta_probs = self._get_roberta_probs(text)
         ensemble_probs = self._get_ensemble_probs(text)
 

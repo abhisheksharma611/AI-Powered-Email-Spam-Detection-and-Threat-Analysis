@@ -22,7 +22,7 @@ from utils.gmail_client import GmailClient, prepare_for_model, GmailFetchError
 from utils.ai_explanation import generate_ai_explanation
 from utils.laya_client import analyze_email as laya_analyze
 from models.predictor import Predictor
-from models.predictor import BASE_RISKS
+from models.predictor import risk_from_confidence
 from models.email_model import db, Email, SenderReputation, OAuthStore, ScanSession
 from utils.helpers import (
     calculate_urgency, learn_keywords_from_email, apply_adaptive_keyword_boost,
@@ -2077,13 +2077,9 @@ def laya_text():
     # RoBERTa artefacts are not consulted for the verdict.
     category_info = predictor.get_category_info(category)
 
-    # Same arithmetic as Predictor._calc_risk, so Laya's verdict renders with
-    # the identical 0-100 scale and tier thresholds the rest of the app uses.
-    base_risk = BASE_RISKS.get(category, 40)
-    risk_score = base_risk * confidence
-    if confidence < 0.25:
-        risk_score *= 0.5
-    risk_score = min(max(int(risk_score), 0), 100)
+    # Same helper the Laya branch of Predictor uses, so the same email carries
+    # the same risk score whether it arrived via this route or via a scan.
+    risk_score = risk_from_confidence(category, confidence)
     risk_level = predictor.get_risk_level(risk_score, category)
 
     note = None
