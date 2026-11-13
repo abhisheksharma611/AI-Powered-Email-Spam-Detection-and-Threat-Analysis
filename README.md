@@ -308,6 +308,24 @@ one-line change and stays on the to-do list.
   latency for each model plus the 90/10 blend. Run it before claiming any
   number — this README cites no accuracy the repo hasn't measured.
 
+### Measured results
+
+The ensemble was scored on the held-out test set (2,055 emails, 20% of the
+10,286-row dataset, never used for training or validation):
+
+| Model | Accuracy | Macro F1 |
+| --- | --- | --- |
+| 5-model scikit-learn ensemble | **97.32%** | 97.15% |
+
+Per-class F1 runs from 93.7% (phishing) to 98.8% (malware). Reproduce it with
+`python models/eval_ensemble_only.py`, which loads the saved vectoriser and
+ensemble and scores `models/test_set.csv` without touching the transformer.
+
+The RoBERTa transformer reaches about 95% on the same split, as reported in the
+project report. It is not measured here because `models/evaluate.py` needs
+torch, which this machine's application control policy blocks; the ensemble
+path above needs only scikit-learn.
+
 ## 🗃️ Dataset
 
 **The dataset is not committed to this repository.** The CSVs are excluded via
